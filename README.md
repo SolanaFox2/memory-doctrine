@@ -4,10 +4,16 @@
 
 **23 axioms · 41 cited sources · 4 operators · 7 clusters · adversarially red-teamed · passes `kpm doctor` · [CC BY 4.0](LICENSE)**
 
+<!-- For an inline autoplay player: edit this file on github.com, drag-drop assets/../memory-doctrine-explainer.mp4 into the editor, and replace the poster line below with the github.com/user-attachments/... URL it produces. -->
+[![Watch the 2-minute explainer](assets/explainer-poster.png)](https://github.com/SolanaFox2/memory-doctrine/releases/download/v1.1.0/memory-doctrine-explainer.mp4)
 
-https://github.com/user-attachments/assets/a12e8a27-cb90-4c3d-9673-5fa1b456f228
+> ▶ **[Watch the 2-minute explainer](https://github.com/SolanaFox2/memory-doctrine/releases/download/v1.1.0/memory-doctrine-explainer.mp4)** (2:16, silent) — the research, the proposal, and the value, in two minutes.
 
-> ▶ **[Watch the 43-second overview](https://github.com/SolanaFox2/memory-doctrine/releases/download/v1.1.0/memory-doctrine-readme.mp4)** (43s, silent) — what the doctrine is, in under a minute.
+## Why this exists
+
+Agent memory is everywhere and agreed on nowhere. Mem0, Letta, Zep, MemGPT, every RAG stack — each ships a memory system, but almost none rests on a shared, cited account of *what memory is*. The result is a fast-moving field built on intuition and benchmark-chasing, with no common theory to build against or argue from.
+
+The Memory Doctrine is that missing layer: a vendor-neutral, evidence-gated set of **fundamental truths** about memory — distilled from 17 research domains, every one cited and adversarially reviewed. It's small enough to read, structured so tools can consume it, and open (CC BY 4.0) so anyone can adopt it, fork it for their own domain, or try to break it. *The faster it's challenged, the better it gets.*
 
 ## Install
 
@@ -15,19 +21,39 @@ https://github.com/user-attachments/assets/a12e8a27-cb90-4c3d-9673-5fa1b456f228
 kpm add github:SolanaFox2/memory-doctrine#v1.1.0
 ```
 
+## How memory works — the doctrine in five ideas
+
+You don't have to read 23 axiom files to get the core. Here is the whole picture:
+
+1. **It's a network, and the edges are the point.** A fact's meaning is its pattern of connections — value lives in the *edges and retrieval paths*, not the nodes. Each connection spends from a finite per-node budget (the *fan law*), so good memory curates its links instead of hoarding them.
+
+2. **Recall is reconstruction, not lookup.** Retrieval is *pattern completion* from a cue — and it is mathematically identical to the attention mechanism in transformers (spreading activation ≡ modern Hopfield networks ≡ attention). An embedding store *is* an associative memory.
+
+3. **"Sure," "true," and "easy to recall" are three different things.** Confidence must be *earned by evidence* — never inferred from fluency or repetition — and kept on a separate axis from how *foundational* a belief is and how *easily* it comes to mind. Collapse those axes and you get the confident-but-wrong failure mode — the root of both hallucination and human false memory.
+
+4. **You forget by losing the path, not the belief — and surprise is the write signal.** Retrievability fades with disuse and interference while the belief itself persists. What tells memory to write something *new* is *prediction error* — surprise. Large surprise → mint a new node; moderate → reconsolidate; none → leave it. Crucially: don't overwrite on surprise, *branch*.
+
+5. **To package knowledge, distill the generators.** Keep the few truths that *generate* the rest, cite them, split a thin index from a rich store, verify adversarially, and mint-don't-overwrite on surprise. That is a Knowledge Package (KPM) — and this doctrine is the rubric for building one.
+
 ## The model
 
-Memory is a retrieval-optimized network of confidence-weighted *generative* truths. Value lives in the edges and retrieval paths — not in the nodes themselves: a node's meaning is constituted entirely by its pattern of connections, and every edge spends from a finite per-node budget (the fan law). A KPM is the portable, distilled form of that network for a domain: it ships the irreducible generators of the domain's knowledge (not elaborations, not summaries), scored with earned evidential confidence, split into a sparse axiom index and a rich evidence store, and packaged with the operators needed to revise it. Because the generators transfer, the KPM transfers; because the confidence is evidence-gated, the KPM is auditable.
+Memory is a retrieval-optimized network of confidence-weighted *generative* truths. A KPM is the portable, distilled form of that network for a domain: it ships the irreducible generators of the domain's knowledge (not elaborations, not summaries), scored with earned evidential confidence, split into a sparse axiom index and a rich evidence store, and packaged with the operators needed to revise it. Because the generators transfer, the KPM transfers; because the confidence is evidence-gated, the KPM is auditable.
 
-## The seven clusters
+## What's inside — the seven clusters
 
-- **[A · Structure](clusters/A-structure.md)** — how knowledge is shaped: weighted edges, atomicity, foundherentist justification
-- **[B · Retrieval](clusters/B-retrieval.md)** — how knowledge is recalled: spreading-activation = Hopfield = attention, cue-dependence, the capacity cliff, index/store split
-- **[C · Truth](clusters/C-truth.md)** — confidence, correctness, and the limits of both: confidence earned not inferred, three independent orderings, confabulation risk, salience firewall
-- **[D · Dynamics](clusters/D-dynamics.md)** — how knowledge changes over time: retrievability decay, novelty-gated write, MTT-safe consolidation, revision operators
-- **[E · Method](clusters/E-method.md)** — how to build and validate a KPM: layered distillation, retrieval practice, adversarial verification, lint/compile operators
-- **[F · Meta](clusters/F-meta.md)** — what the doctrine knows about itself: convergence-corroboration, contradictions as category errors, the Surprise Principle, the B1 = B4 cognitive-map unification
-- **[G · Prospective](clusters/G-prospective.md)** — agentic and future-directed memory: trigger memory, intention lifecycle (agentic KPMs only)
+The 23 axioms are organized into seven clusters. Each answers one question about memory and carries a headline truth:
+
+| Cluster | The question it answers | A headline truth |
+|---|---|---|
+| **[A · Structure](clusters/A-structure.md)** | How is knowledge shaped? | Value is in the weighted edges, not the nodes (the fan law) |
+| **[B · Retrieval](clusters/B-retrieval.md)** | How is it recalled? | Retrieval = pattern completion; spreading activation ≡ Hopfield ≡ attention |
+| **[C · Truth](clusters/C-truth.md)** | How sure — and how do we know? | Confidence is *earned* by evidence, on its own axis (three orderings, never collapsed) |
+| **[D · Dynamics](clusters/D-dynamics.md)** | How does it change over time? | You forget by losing access, not the belief; surprise gates new writes |
+| **[E · Method](clusters/E-method.md)** | How do you build & validate it? | Distill generators in layers; verify adversarially before locking |
+| **[F · Meta](clusters/F-meta.md)** | What does it know about itself? | Prediction error is one quantity doing three jobs; a KPM is a factorized cognitive map |
+| **[G · Prospective](clusters/G-prospective.md)** | How do agents remember to *act*? | Bind triggers to nodes you already traverse; inhibit completed intentions |
+
+Every axiom is its own atomic note in [`axioms/`](axioms) — a confidence score, a generativity score, typed links to the axioms it derives from or supports, and citations into the [`evidence/`](evidence) store.
 
 ```mermaid
 mindmap
@@ -136,6 +162,10 @@ flowchart LR
 3. **Split index from store** (B4) — KPM = index; research files = store; retrieval completes the join.
 4. **Verify before locking** (E4) — run lint (E3) then adversarial challenge; Gettier risk is real.
 5. **Mint, don't overwrite, on surprise** (the Surprise Principle, [F3](axioms/F3-surprise-principle.md)) — large prediction error → new node, not in-place edit.
+
+## How it was built (why you can trust it)
+
+Every axiom here was *earned, not asserted*. The doctrine was synthesized from primary sources across **17 research domains** — cognitive psychology, neuroscience, reinforcement learning, information theory, epistemology, personal knowledge management, AI memory systems, cognitive architectures, and more — then put through **three independent adversarial red-team rounds** and a **full-text citation audit**. That audit caught a hallucinated author and a missing axiom *before* release. Confidence scores come from the evidence, never from how good a claim sounds. **23 of 23 axioms are cited**, and `scripts/doctrine_lint.py` enforces it on every change.
 
 ## Challenge it
 
