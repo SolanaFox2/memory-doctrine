@@ -4,9 +4,9 @@
 
 **23 axioms · 41 cited sources · 4 operators · 7 clusters · adversarially red-teamed · passes `kpm doctor` · [CC BY 4.0](LICENSE)**
 
-<video src="https://github.com/SolanaFox2/memory-doctrine/releases/download/v1.1.0/memory-doctrine-readme.mp4" controls width="100%"></video>
+[![Watch the 43-second overview of the Memory Doctrine](assets/overview-poster.png)](https://github.com/SolanaFox2/memory-doctrine/releases/download/v1.1.0/memory-doctrine-readme.mp4)
 
-> ▶ **[Watch the 43-second overview](https://github.com/SolanaFox2/memory-doctrine/releases/download/v1.1.0/memory-doctrine-readme.mp4)** — what the doctrine is, in under a minute.
+> ▶ **[Watch the 43-second overview](https://github.com/SolanaFox2/memory-doctrine/releases/download/v1.1.0/memory-doctrine-readme.mp4)** (43s, silent) — what the doctrine is, in under a minute.
 
 ## Install
 
