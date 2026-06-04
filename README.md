@@ -1,169 +1,116 @@
 # The Memory Doctrine
 
-*A retrieval-optimized, confidence-weighted axiom-set for how knowledge should be shaped, stored, recalled, and revised.*
+**A theory of how memory works — turned into a standard for knowledge, turned into a tool that packages it. All open, so improving any layer improves them all.**
 
-**23 axioms · 41 cited sources · 4 operators · 7 clusters · adversarially red-teamed · passes `kpm doctor` · [CC BY 4.0](LICENSE)**
+`open · CC BY 4.0`
 
 https://github.com/user-attachments/assets/1c87f193-bd6a-401b-a4fd-00dcbcaeece1
 
-## Why this exists
-
-Agent memory is everywhere and agreed on nowhere. Mem0, Letta, Zep, MemGPT, every RAG stack — each ships a memory system, but almost none rests on a shared, cited account of *what memory is*. The result is a fast-moving field built on intuition and benchmark-chasing, with no common theory to build against or argue from.
-
-The Memory Doctrine is that missing layer: a vendor-neutral, evidence-gated set of **fundamental truths** about memory — distilled from 17 research domains, every one cited and adversarially reviewed. It's small enough to read, structured so tools can consume it, and open (CC BY 4.0) so anyone can adopt it, fork it for their own domain, or try to break it. *The faster it's challenged, the better it gets.*
-
-## Install
-
-```bash
-kpm add github:SolanaFox2/memory-doctrine#v1.1.0
-```
-
-## How memory works — the doctrine in five ideas
-
-You don't have to read 23 axiom files to get the core. Here is the whole picture:
-
-1. **It's a network, and the edges are the point.** A fact's meaning is its pattern of connections — value lives in the *edges and retrieval paths*, not the nodes. Each connection spends from a finite per-node budget (the *fan law*), so good memory curates its links instead of hoarding them.
-
-2. **Recall is reconstruction, not lookup.** Retrieval is *pattern completion* from a cue — and it is mathematically identical to the attention mechanism in transformers (spreading activation ≡ modern Hopfield networks ≡ attention). An embedding store *is* an associative memory.
-
-3. **"Sure," "true," and "easy to recall" are three different things.** Confidence must be *earned by evidence* — never inferred from fluency or repetition — and kept on a separate axis from how *foundational* a belief is and how *easily* it comes to mind. Collapse those axes and you get the confident-but-wrong failure mode — the root of both hallucination and human false memory.
-
-4. **You forget by losing the path, not the belief — and surprise is the write signal.** Retrievability fades with disuse and interference while the belief itself persists. What tells memory to write something *new* is *prediction error* — surprise. Large surprise → mint a new node; moderate → reconsolidate; none → leave it. Crucially: don't overwrite on surprise, *branch*.
-
-5. **To package knowledge, distill the generators.** Keep the few truths that *generate* the rest, cite them, split a thin index from a rich store, verify adversarially, and mint-don't-overwrite on surprise. That is a Knowledge Package (KPM) — and this doctrine is the rubric for building one.
-
-## The model
-
-Memory is a retrieval-optimized network of confidence-weighted *generative* truths. A KPM is the portable, distilled form of that network for a domain: it ships the irreducible generators of the domain's knowledge (not elaborations, not summaries), scored with earned evidential confidence, split into a sparse axiom index and a rich evidence store, and packaged with the operators needed to revise it. Because the generators transfer, the KPM transfers; because the confidence is evidence-gated, the KPM is auditable.
-
-## What's inside — the seven clusters
-
-The 23 axioms are organized into seven clusters. Each answers one question about memory and carries a headline truth:
-
-| Cluster | The question it answers | A headline truth |
-|---|---|---|
-| **[A · Structure](clusters/A-structure.md)** | How is knowledge shaped? | Value is in the weighted edges, not the nodes (the fan law) |
-| **[B · Retrieval](clusters/B-retrieval.md)** | How is it recalled? | Retrieval = pattern completion; spreading activation ≡ Hopfield ≡ attention |
-| **[C · Truth](clusters/C-truth.md)** | How sure — and how do we know? | Confidence is *earned* by evidence, on its own axis (three orderings, never collapsed) |
-| **[D · Dynamics](clusters/D-dynamics.md)** | How does it change over time? | You forget by losing access, not the belief; surprise gates new writes |
-| **[E · Method](clusters/E-method.md)** | How do you build & validate it? | Distill generators in layers; verify adversarially before locking |
-| **[F · Meta](clusters/F-meta.md)** | What does it know about itself? | Prediction error is one quantity doing three jobs; a KPM is a factorized cognitive map |
-| **[G · Prospective](clusters/G-prospective.md)** | How do agents remember to *act*? | Bind triggers to nodes you already traverse; inhibit completed intentions |
-
-Every axiom is its own atomic note in [`axioms/`](axioms) — a confidence score, a generativity score, typed links to the axioms it derives from or supports, and citations into the [`evidence/`](evidence) store.
-
-```mermaid
-mindmap
-  root((Memory<br/>Doctrine))
-    A · Structure
-      A1 fan-budgeted edges
-      A2 atomicity
-      A3 foundherentism
-    B · Retrieval
-      B1 activation ≡ Hopfield ≡ attention
-      B2 cue-dependence
-      B3 capacity cliff
-      B4 index / store split
-    C · Truth
-      C1 confidence earned
-      C2 three orderings
-      C3 confident-but-wrong
-      C4 salience gating
-    D · Dynamics
-      D1 retrievability decay
-      D2 novelty-gated write
-      D3 MTT-safe consolidation
-    E · Method
-      E1 layered distillation
-      E2 retrieval practice
-      E4 adversarial verify
-    F · Meta
-      F1 convergence
-      F2 contradictions = category errors
-      F3 Surprise Principle
-      F4 cognitive-map unification
-    G · Prospective
-      G1 trigger memory
-      G2 intention lifecycle
-```
-
-## Two unifications worth the price of admission
-
-The doctrine earns its keep where it *collapses* things people treat as separate:
-
-- **The Surprise Principle (F3)** — salience-gating, novelty-gated writes, and predictive coding are not three mechanisms; they are *one quantity* — prediction error — observed at three levels (behavioral, dopaminergic, cortical).
-- **The cognitive-map unification (F4)** — embeddings-as-geometry (B1) and the sparse-index→rich-store (B4) are the *same object*: a cognitive map. A KPM is structurally a factorized cognitive map, which is *why* its generators transfer.
-
-```mermaid
-graph TD
-    C4["C4 salience-gating"] --> F3["F3 · Surprise Principle<br/>one quantity, three mechanisms"]
-    D2["D2 novelty-gated write"] --> F3
-    PC["predictive coding"] --> F3
-    B1["B1 embeddings = geometry"] --> F4["F4 · cognitive-map unification<br/>a KPM is a factorized cognitive map"]
-    B4["B4 index → store"] --> F4
-    classDef u fill:#f0883e,stroke:#7a4a25,color:#0d1117
-    classDef s fill:#161b22,stroke:#58a6ff,color:#e6edf3
-    class F3,F4 u
-    class C4,D2,PC,B1,B4 s
-```
-
-## Operators (the productions)
-
-A portable KPM ships axioms *and* the rules to revise them — the operators are its procedural memory.
-
-- **[D4 · Contract](operators/D4-contract.md)** — on contradiction, minimally shrink the belief set per AGM; never delete evidence
-- **[D5 · Suppress](operators/D5-suppress.md)** — lower a belief's retrievability without touching its confidence or evidence; reversible, auditable
-- **[E3 · Lint](operators/E3-lint.md)** — mechanical pre-lock gate: atomicity, evidence presence, frontmatter-body sync, F2 invariant
-- **[E5 · Compile](operators/E5-compile.md)** — on impasse, distill the resolution path into a candidate new generator; must pass E4 before ignition
-
-## How this package is built
-
-The structure is self-exemplifying. The 23 atomic axiom notes *are* the index (B4's sparse index layer); the 41 evidence notes *are* the store (B4's rich content layer); this README is the distilled spine (E1's generator layer sitting above the elaboration). The lint gate runs automatically: `scripts/doctrine_lint.py` (0 violations). Every promoted axiom has been adversarially challenged and independently grounded (E4). Confidence fields are set from evidence, never from retrieval frequency or fluency (C1).
-
 ```mermaid
 flowchart TD
-    R["README — the spine<br/>distilled generators · E1"]:::spine
-    R --> C["7 cluster overviews<br/>mid layer"]:::mid
-    C --> X["23 axiom notes<br/>the INDEX — atomic, weighted (A2)"]:::idx
-    X -->|"evidence: [ … ]"| E["41 evidence notes<br/>the STORE — cited sources (B4)"]:::store
-    X -. "revised by" .-> O["operators<br/>D4 contract · D5 suppress · E3 lint · E5 compile"]:::op
-    classDef spine fill:#f0883e,stroke:#7a4a25,color:#0d1117
-    classDef mid fill:#1c2430,stroke:#f0883e,color:#ffb072
-    classDef idx fill:#161b22,stroke:#58a6ff,color:#e6edf3
-    classDef store fill:#161b22,stroke:#3fb950,color:#e6edf3
-    classDef op fill:#161b22,stroke:#bc8cff,color:#e6edf3
+    T["THEORY — how memory actually works<br/>the doctrine · cited, tested truths"] -->|defines| S["STANDARD — what a well-formed knowledge package is<br/>the schema every note follows"]
+    S -->|implemented by| O["TOOL — turn your notes into one<br/>package-research"]
+    classDef t fill:#161b22,stroke:#58a6ff,color:#e6edf3
+    classDef s fill:#161b22,stroke:#f0883e,color:#ffb072
+    classDef o fill:#f0883e,stroke:#7a4a25,color:#0d1117
+    class T t
+    class S s
+    class O o
 ```
 
-## How to use it
+That stack isn't aspirational — all three layers are in this repo:
 
-This doctrine is the rubric a knowledge-packaging skill or agent builds against when turning raw notes, research, or experience into a portable knowledge package:
+- **The theory** → [`axioms/`](axioms) + [`clusters/`](clusters) — the cited truths, in seven themes.
+- **The standard** → [`scripts/doctrine_lint.py`](scripts/doctrine_lint.py) — the mechanical checker every package must pass.
+- **The tool** → [`tools/package-research`](tools/package-research) — turns your notes into a conformant package.
+- **The open edges** → [`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md) — what the standard hasn't settled yet.
+
+## The problem
+
+Every AI agent has memory — a vector store, a RAG pipeline, a "memory" feature. But those are all just the *bottom* layer: a tool floating on nothing. The field has no shared, evidence-based answer to what memory *is* or what makes it good, so everyone rebuilds the same intuitions, benchmark by benchmark.
+
+The Memory Doctrine is the **whole stack** — a real theory, the standard that follows from it, and a tool that runs on both. Each layer earns the next: because the theory is sound, the standard is principled; because the standard is concrete, the tool is real.
+
+---
+
+## 1 · The theory — how memory actually works
+
+Distilled from research across psychology, neuroscience, information theory, and AI into a short set of **cited, confidence-weighted truths** about memory. You don't need to read every note — here's the core in five ideas:
+
+1. **It's a network, and the connections are the point.** What a fact *means* is what it's connected to — value lives in the links, not the nodes.
+2. **Remembering is reconstruction, not lookup.** You rebuild a memory from a cue. (The math for it is the same math as "attention" inside AI models — an embedding store *is* a kind of memory.)
+3. **"Sure," "true," and "easy to recall" are three different things.** Confidence must be *earned by evidence*, not from how familiar something feels. Confuse them and you get *confident-but-wrong* — the root of both human false memory and AI hallucination.
+4. **You forget the path, not the memory — and surprise is the trigger to learn.** What tells memory to write something *new* is surprise: the gap between expected and actual.
+5. **To keep knowledge, keep only the ideas that generate the rest.** Find the few load-bearing truths, cite them, and build from there.
+
+The theory is organized into **seven themes**, each answering one question about memory:
+
+| Theme | The question it answers | The headline idea |
+|---|---|---|
+| **[Structure](clusters/A-structure.md)** | How is knowledge shaped? | The value is in the connections, not the facts |
+| **[Retrieval](clusters/B-retrieval.md)** | How is it recalled? | Remembering is reconstruction — the same math as AI attention |
+| **[Truth](clusters/C-truth.md)** | How sure, and how do we know? | Confidence must be earned by evidence, kept apart from familiarity |
+| **[Dynamics](clusters/D-dynamics.md)** | How does it change over time? | You lose the path, not the belief; surprise drives new learning |
+| **[Method](clusters/E-method.md)** | How do you build and check it? | Keep the load-bearing ideas; verify them adversarially |
+| **[Meta](clusters/F-meta.md)** | What does it know about itself? | Where the deepest unifications live |
+| **[Prospective](clusters/G-prospective.md)** | How does an agent remember to *act*? | Tie reminders to things you'll naturally pass by |
+
+Each idea is its own short, cited note — [browse them all](axioms). Every claim traces to primary research and was put through adversarial review before it was accepted.
+
+---
+
+## 2 · The standard — what a well-formed knowledge package is
+
+The theory doesn't just describe memory; it tells you **what a good unit of knowledge should look like.** A *knowledge package* built to the doctrine is:
+
+- a **thin index** of ideas, each one **confidence-weighted** (the score earned from evidence),
+- pointing to a **rich store** of the cited sources behind them,
+- with **typed links** between ideas, and the **rules for revising them** shipped alongside.
+
+That's the standard — and it's mechanically checkable: a small linter enforces it, and the package installs and validates with `kpm doctor`. The doctrine **is its own reference implementation** of the standard: this repo is a knowledge package that obeys every rule it states.
+
+---
+
+## 3 · The tool — turn your knowledge into a package
+
+`package-research` is the standard, made runnable — and it lives in this repo, at [`tools/package-research`](tools/package-research). Point it at a folder of notes, research, or transcripts and it runs the doctrine's pipeline — distilling the load-bearing ideas, scoring their confidence from the evidence, splitting index from store, and verifying each — to produce a clean, cited package that passes the standard.
 
 ```mermaid
 flowchart LR
-    N["messy notes<br/>research · experience"] --> A["distill<br/>generators · E1"]
-    A --> B["score confidence<br/>from evidence · C1"]
-    B --> C["split<br/>index / store · B4"]
-    C --> V["adversarial<br/>verify · E4"]
-    V --> S["surprise check<br/>F3"]
-    S -->|"large error"| M["mint a NEW node"]
-    S -->|"else"| K["a portable KPM"]
-    M --> K
+    N["messy notes<br/>research · experience"] --> A["keep the<br/>load-bearing ideas"]
+    A --> B["score confidence<br/>from evidence"]
+    B --> C["split a short index<br/>from the details"]
+    C --> V["verify each idea"]
+    V --> K["a clean, cited<br/>knowledge package"]
     classDef step fill:#161b22,stroke:#f0883e,color:#e6edf3
     classDef out fill:#f0883e,stroke:#7a4a25,color:#0d1117
-    class N,A,B,C,V,S,M step
+    class N,A,B,C,V step
     class K out
 ```
 
-1. **Distill generators, not notes** (E1) — find the irreducible source; don't transcribe elaborations.
-2. **Score confidence from evidence** (C1) — check citations; never infer from fluency or recency.
-3. **Split index from store** (B4) — KPM = index; research files = store; retrieval completes the join.
-4. **Verify before locking** (E4) — run lint (E3) then adversarial challenge; Gettier risk is real.
-5. **Mint, don't overwrite, on surprise** (the Surprise Principle, [F3](axioms/F3-surprise-principle.md)) — large prediction error → new node, not in-place edit.
+```bash
+# from a clone of this repo:
+cd tools/package-research && pip install -e .
+package-research run ./my-notes --out ./my-kpm
+```
 
-## How it was built (why you can trust it)
+It runs two ways: with an API key it does the distilling itself; or in **keyless "skill mode"** an AI agent drives it — the agent does the judgment, the tool guarantees the structure. Either way the output passes the same gates. → [how it works](tools/package-research)
 
-Every axiom here was *earned, not asserted*. The doctrine was synthesized from primary sources across **17 research domains** — cognitive psychology, neuroscience, reinforcement learning, information theory, epistemology, personal knowledge management, AI memory systems, cognitive architectures, and more — then put through **three independent adversarial red-team rounds** and a **full-text citation audit**. That audit caught a hallucinated author and a missing axiom *before* release. Confidence scores come from the evidence, never from how good a claim sounds. **23 of 23 axioms are cited**, and `scripts/doctrine_lint.py` enforces it on every change.
+"Summarize my notes" becomes "distill my notes into cited, confidence-weighted, reusable knowledge."
+
+---
+
+## Open by design — improve one, improve all
+
+The three layers are tied together *and* open (CC BY 4.0), so a win anywhere propagates:
+
+- **Challenge an axiom** → the theory sharpens → the standard it defines sharpens → the tool produces better packages.
+- **Improve the tool** → it stress-tests the standard → which feeds back into the theory.
+
+Most memory systems are a closed bottom layer. This is an open stack that **gets better as a whole** — every adopter who challenges a claim or improves the tool improves the foundation for everyone.
 
 ## Challenge it
 
-This doctrine is **defeasible by design** — every axiom is confidence-weighted and built to improve from attack. See **[CONTRIBUTING.md](CONTRIBUTING.md)**: open a `challenge: <axiom-id>` issue with a real citation, and a well-supported refutation will lower an axiom's confidence, re-scope it, or retire it. The fastest way to make the doctrine better is to try to break it.
+This doctrine is **made to be argued with.** Open an issue titled `challenge: <idea>` with a real citation, and a well-supported objection will lower an idea's confidence, narrow it, or retire it. See **[CONTRIBUTING.md](CONTRIBUTING.md)** — and **[OPEN-QUESTIONS.md](OPEN-QUESTIONS.md)** for the gaps the standard hasn't settled yet. The fastest way to improve the whole stack is to try to break the theory it rests on.
+
+*Licensed [CC BY 4.0](LICENSE) — adapt and improve freely, with attribution.*

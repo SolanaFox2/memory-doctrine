@@ -1,0 +1,3 @@
+Confidence is earned by evidence and is revisable. It must never be inferred
+from fluency, recency, or how many supporting edges a node has. Confidence is a
+credence that changes only when evidence changes.
