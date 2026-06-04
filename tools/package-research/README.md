@@ -4,6 +4,8 @@ The Memory Doctrine's **consuming tool**. It turns a folder of raw notes /
 research into a doctrine-grounded **knowledge package (KPM)** — proving the
 doctrine is something tools can *run*, not just read.
 
+*How it works inside — data flow, record shapes, on-disk formats: [ARCHITECTURE.md](ARCHITECTURE.md).*
+
 The full pipeline is:
 
 ```
