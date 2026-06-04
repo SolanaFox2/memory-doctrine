@@ -7,18 +7,6 @@
 <!-- ▶ DROP VIDEO: drag memory-doctrine-summary.mp4 onto the line below in GitHub's web editor; it becomes a video player. Then delete this comment and the placeholder line. -->
 **▶ Overview video placeholder** — drag-and-drop `memory-doctrine-summary.mp4` here (~32s).
 
-```mermaid
-flowchart TD
-    T["THEORY — how memory actually works<br/>the doctrine · cited, tested truths"] -->|defines| S["STANDARD — what a well-formed knowledge package is<br/>the schema every note follows"]
-    S -->|implemented by| O["TOOL — turn your notes into one<br/>package-research"]
-    classDef t fill:#161b22,stroke:#58a6ff,color:#e6edf3
-    classDef s fill:#161b22,stroke:#f0883e,color:#ffb072
-    classDef o fill:#f0883e,stroke:#7a4a25,color:#0d1117
-    class T t
-    class S s
-    class O o
-```
-
 All three layers are in this repo:
 
 - **The theory** → [`axioms/`](axioms) + [`clusters/`](clusters) — the cited truths, in seven themes.
@@ -109,19 +97,6 @@ evidence: [teyler-discenna-1986, mcclelland-1995]   # → into the rich store
 **▶ Tool video placeholder** — drag-and-drop `memory-doctrine-tool.mp4` here (~50s).
 
 [`package-research`](tools/package-research) takes a folder of raw notes — research, transcripts, scratch files — and produces a package that passes the checker. It runs the doctrine's method as a pipeline:
-
-```mermaid
-flowchart LR
-    N["messy<br/>notes"] --> A["distill the<br/>load-bearing ideas"]
-    A --> B["score confidence<br/>from evidence"]
-    B --> V["verify —<br/>drop the unsupported"]
-    V --> S["split index<br/>from store"]
-    S --> K["a cited, checked<br/>knowledge package"]
-    classDef step fill:#161b22,stroke:#30363d,color:#e6edf3
-    classDef out fill:#f0883e,stroke:#7a4a25,color:#0d1117
-    class N,A,B,V,S step
-    class K out
-```
 
 1. **Read** the notes and split them into passages, each tagged with where it came from.
 2. **Distill** the few load-bearing ideas out of the passages.
