@@ -1,11 +1,9 @@
 # The Memory Doctrine
 
 **A theory of how memory works — turned into a standard for knowledge, turned into a tool that packages it. All open, so improving any layer improves them all.**
-
 `open · CC BY 4.0`
 
-<!-- ▶ DROP VIDEO: drag memory-doctrine-summary.mp4 onto the line below in GitHub's web editor; it becomes a video player. Then delete this comment and the placeholder line. -->
-**▶ Overview video placeholder** — drag-and-drop `memory-doctrine-summary.mp4` here (~32s).
+https://github.com/user-attachments/assets/d346fafe-4897-4371-a27b-767d9929ea4e
 
 All three layers are in this repo:
 
@@ -24,8 +22,7 @@ The Memory Doctrine covers all three layers — a theory, the standard that foll
 
 ## 1 · The theory — how memory actually works
 
-<!-- ▶ DROP VIDEO: drag memory-doctrine-theory.mp4 onto the line below in GitHub's web editor; it becomes a video player. Then delete this comment and the placeholder line. -->
-**▶ Theory video placeholder** — drag-and-drop `memory-doctrine-theory.mp4` here (45s).
+https://github.com/user-attachments/assets/ad5d3a96-5ba4-488b-9b28-5e6f95a40395
 
 > **Memory is a network of generative, confidence-weighted truths** — a graph of ideas where the value lives in the *connections*, each idea carries an *earned* degree of belief, and a few load-bearing ideas *generate* the rest.
 
@@ -53,8 +50,7 @@ Three results worth pulling out:
 
 ## 2 · The standard — what a well-formed knowledge package is
 
-<!-- ▶ DROP VIDEO: drag memory-doctrine-standard.mp4 onto the line below in GitHub's web editor; it becomes a video player. Then delete this comment and the placeholder line. -->
-**▶ Standard video placeholder** — drag-and-drop `memory-doctrine-standard.mp4` here (~48s).
+https://github.com/user-attachments/assets/79409107-ead0-42b7-b952-940ddcc9133d
 
 The theory doesn't just describe memory; it determines what a unit of knowledge should look like. Every rule of the standard traces to a finding above — nothing here is arbitrary:
 
@@ -93,8 +89,7 @@ evidence: [teyler-discenna-1986, mcclelland-1995]   # → into the rich store
 
 ## 3 · The tool — turning notes into a package
 
-<!-- ▶ DROP VIDEO: drag memory-doctrine-tool.mp4 onto the line below in GitHub's web editor; it becomes a video player. Then delete this comment and the placeholder line. -->
-**▶ Tool video placeholder** — drag-and-drop `memory-doctrine-tool.mp4` here (~50s).
+https://github.com/user-attachments/assets/90a96ea8-1cc9-48fb-99ca-602b1ed90801
 
 [`package-research`](tools/package-research) takes a folder of raw notes — research, transcripts, scratch files — and produces a package that passes the checker. It runs the doctrine's method as a pipeline:
 
