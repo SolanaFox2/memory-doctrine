@@ -1,10 +1,10 @@
 {
   "name": "@kpm/memory-doctrine",
-  "version": "1.1.0",
+  "version": "1.2.1",
   "description": "A confidence-weighted axiom-set for how memory works — a portable, open doctrine for building knowledge packages (KPMs).",
   "license": "CC-BY-4.0",
   "type": "knowledge-package",
-  "files": ["**/*.md", "!wiki/**", "!knowledge_modules/**"],
+  "files": ["**/*.md", "!wiki/**", "!knowledge_modules/**", "!tools/**"],
   "entrypoint": "README.md",
   "knowledgeDependencies": {}
 }
