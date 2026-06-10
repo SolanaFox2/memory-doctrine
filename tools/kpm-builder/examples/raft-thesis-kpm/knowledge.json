@@ -1,0 +1,14 @@
+{
+  "name": "@kpm/raft-thesis",
+  "version": "0.1.0",
+  "description": "Establish, from primary sources, how the Raft consensus algorithm works at thesis depth as precise atomic facts \u2014 covering not only the core algorithm but persistence/liveness, read-only requests, leadership transfer/Pre-Vote/CheckQuorum, the formal TLA+ verification and evaluation, related work, the Figure-2 implementer contract, the Figure-8 commitment hazard with the full Leader-Completeness proof, and membership/snapshot subtleties.",
+  "license": "CC-BY-4.0 (axiom/structure prose only; see LICENSE-NOTICE.md for quoted source passages)",
+  "type": "knowledge-package",
+  "files": [
+    "**/*.md",
+    "!wiki/**",
+    "!knowledge_modules/**"
+  ],
+  "entrypoint": "README.md",
+  "knowledgeDependencies": {}
+}

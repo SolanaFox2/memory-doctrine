@@ -1,0 +1,6 @@
+pyyaml>=6.0
+pydantic>=2.0
+# optional cross-family grounding (install if you set a key):
+#   anthropic>=0.40   (Claude / Claude-compatible endpoints)
+#   openai>=1.0       (DeepSeek-compatible endpoints)
+#   google-generativeai

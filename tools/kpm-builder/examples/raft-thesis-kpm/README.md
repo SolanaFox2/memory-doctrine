@@ -1,0 +1,156 @@
+# @kpm/raft-thesis
+
+Establish, from primary sources, how the Raft consensus algorithm works at thesis depth as precise atomic facts — covering not only the core algorithm but persistence/liveness, read-only requests, leadership transfer/Pre-Vote/CheckQuorum, the formal TLA+ verification and evaluation, related work, the Figure-2 implementer contract, the Figure-8 commitment hazard with the full Leader-Completeness proof, and membership/snapshot subtleties.
+
+## Axioms
+
+- **Raft is a consensus algorithm for managing a replicated log.**
+- **Replicated state machines are typically implemented using a replicated log, where each server stores a log of commands its state machine executes in order.**
+- **Because the state machines are deterministic and execute the same sequence of commands, each computes the same state and the same sequence of outputs.**
+- **Raft uses a stronger form of leadership than other consensus algorithms** — log entries flow only from the leader to other servers.
+- **At any given time each Raft server is in one of three states** — leader, follower, or candidate.
+- **Raft decomposes the consensus problem into three relatively independent subproblems.**
+- **Paxos uses a symmetric peer-to-peer approach at its core, though it also suggests a weak form of leadership as a performance optimization.**
+- **Raft divides time into terms numbered with consecutive integers.**
+- **Each server stores a current term number, which increases monotonically over time.**
+- **Each term begins with an election, in which one or more candidates attempt to become leader.**
+- **Raft ensures that there is at most one leader in a given term.**
+- **Current terms are exchanged whenever servers communicate** — if one server's current term is smaller than the other's, it updates its current term to the larger value.
+- **If a candidate or leader discovers that its term is out of date, it immediately reverts to follower state.**
+- **Terms act as a logical clock in Raft, allowing servers to detect obsolete information such as stale leaders.**
+- **Leaders send periodic heartbeats (AppendEntries RPCs that carry no log entries) to all followers to maintain their authority.**
+- **If a follower receives no communication over a period of time called the election timeout, it assumes there is no viable leader and begins an election.**
+- **To begin an election a follower increments its current term, transitions to candidate state, votes for itself, and issues RequestVote RPCs in parallel to the other servers.**
+- **A candidate wins an election if it receives votes from a majority of the servers in the full cluster for the same term.**
+- **Each server will vote for at most one candidate in a given term, on a first-come-first-served basis.**
+- **To prevent split votes, election timeouts are chosen randomly from a fixed interval, for example 150–300 ms.**
+- **Accounting for broadcast time and mean-time-between-failures constraints, the election timeout is likely to be somewhere between 10–500 ms.**
+- **While waiting for votes, if a candidate receives an AppendEntries RPC from a server whose term is at least as large as its own, it recognizes the leader as legitimate and returns to follower state.**
+- **Each log entry stores a state-machine command along with the term number assigned when that entry was received by the leader.**
+- **Each log entry also has an integer index identifying its position in the log.**
+- **Upon receiving a client command, the leader appends it to its log as a new entry, then issues AppendEntries RPCs in parallel to the other servers to replicate the entry.**
+- **When sending an AppendEntries RPC the leader includes the index and term of the entry immediately preceding the new entries** — if the follower does not find a matching entry it refuses the new entries.
+- **After an AppendEntries rejection caused by log inconsistency, the leader decrements nextIndex and retries until nextIndex reaches a point where the leader and follower logs match.**
+- **A leader never overwrites or deletes entries in its own log** — it only appends new entries (the Leader Append-Only Property).
+- **Raft handles inconsistencies by forcing followers' logs to duplicate the leader's, so conflicting entries in follower logs are overwritten with entries from the leader's log.**
+- **A log entry is committed once the leader that created it has replicated it on a majority of the servers.**
+- **Committing an entry also commits all preceding entries in the leader's log, including entries created by previous leaders.**
+- **The leader tracks the highest index known to be committed and includes that commit index in future AppendEntries RPCs so followers apply committed entries to their state machines in log order.**
+- **Raft never commits log entries from previous terms by counting replicas** — only entries from the leader's current term are committed by counting replicas, after which all prior entries are committed indirectly via the Log Matching Property.
+- **Committed entries are durable and will eventually be executed by all of the available state machines.**
+- **Election Safety** — at most one leader can be elected in a given term.
+- **Log Matching** — if two logs contain an entry with the same index and term, then the logs are identical in all entries up through the given index.
+- **Leader Completeness** — if a log entry is committed in a given term, then that entry will be present in the logs of the leaders for all higher-numbered terms.
+- **State Machine Safety** — if a server has applied a log entry at a given index to its state machine, no other server will ever apply a different log entry for the same index.
+- **The election restriction prevents a candidate from winning unless its log contains all committed entries** — a voter denies its vote if its own log is more up-to-date than the candidate's.
+- **Raft determines which of two logs is more up-to-date by comparing the index and term of the last entries** — the log with the later last-entry term is more up-to-date, and if the terms are equal the longer log is more up-to-date.
+- **Switching servers directly from the old configuration to the new is unsafe because the change cannot be applied atomically, so the cluster can split into two independent majorities during the transition.**
+- **In the paper's approach, Raft first switches to a transitional joint-consensus configuration, and only after it is committed does the system transition to the new configuration.**
+- **Under joint consensus, agreement for both elections and entry commitment requires separate majorities from both the old and the new configurations.**
+- **The thesis recommends restricting membership changes so that only one server can be added or removed from the cluster at a time.**
+- **To avoid availability gaps, a new server first joins as a non-voting member that receives replicated entries but is not counted toward majorities until it has caught up.**
+- **Each Raft server takes snapshots independently, covering just the committed entries in its log.**
+- **A snapshot's metadata includes the last included index (the index of the last entry the snapshot replaces) and the last included term (the term of that entry).**
+- **A leader sends a follower a snapshot only when it has already discarded the next log entry needed to replicate to that follower via AppendEntries.**
+- **Under linearizability, each operation appears to execute instantaneously, exactly once, at some point between its invocation and its response.**
+- **To handle duplicate requests, clients assign unique serial numbers to every command and the state machine tracks the latest serial number processed per client, responding immediately to an already-executed serial number without re-executing.**
+- **Each leader commits a blank no-op entry into the log at the start of its term.**
+- **Raft's persistent state on every server is currentTerm, votedFor, and log[], and this state must be written to stable storage before the server responds to RPCs.**
+- **commitIndex and lastApplied are volatile state on all servers, each initialized to 0 and increasing monotonically.**
+- **Each server persists its current term and vote to stable storage to prevent voting twice in the same term or replacing log entries from a newer leader with those from a deposed leader.**
+- **Each server persists new log entries before they are counted toward commitment, which prevents committed entries from being lost or uncommitted when servers restart.**
+- **The commit index can safely be reinitialized to zero on a restart because it is reconstructed** — once a leader is elected and commits a new entry, its commit index advances and propagates to followers.
+- **Figure 2 lists lastApplied as volatile, but the thesis refines that for a persistent state machine the last-applied index must also be persistent to avoid reapplying already-applied entries.**
+- **Raft RPCs have the same effect if repeated, so a server that crashes after completing an RPC but before responding can safely receive the same RPC again on restart.**
+- **A typical Raft cluster of five servers can tolerate the failure of any two servers, remaining available as long as a majority of servers are operational and can communicate.**
+- **Raft ensures safety (never returning an incorrect result) under all non-Byzantine conditions, including network delays, partitions, and packet loss, duplication, and reordering.**
+- **Raft's safety must not depend on timing (the system must never produce incorrect results because an event is faster or slower than expected), whereas availability inevitably depends on timing.**
+- **Raft maintains the consistency of its logs without depending on timing, preserving safety under an asynchronous model in which faulty clocks and extreme message delays can at worst cause availability problems.**
+- **Raft can elect and maintain a steady leader as long as the system satisfies the timing requirement broadcastTime << electionTimeout << MTBF.**
+- **In the timing inequality, broadcastTime is the average time to send RPCs in parallel to every server and receive responses, electionTimeout is the election timeout, and MTBF is the average time between failures for a single server.**
+- **The broadcast time should be an order of magnitude less than the election timeout, and the election timeout should be a few orders of magnitude less than MTBF, so the system makes steady progress.**
+- **In the Raft TLA+ specification, a restart leaves currentTerm, votedFor, and log unchanged while resetting commitIndex to 0, formally encoding the persistent-versus-volatile state classification.**
+- **Because read-only client commands only query the replicated state machine and do not change it, it is natural to ask whether they can bypass the Raft log, which would offer a performance advantage since the synchronous disk writes needed to append entries are time-consuming.**
+- **Serving a read directly from the leader without extra measures risks returning stale data, because the leader responding might have been superseded by a newer leader of which it is unaware.**
+- **Once a leader's no-op entry is committed, the leader's commit index is at least as large as any other server's during its term.**
+- **Before answering a read-only request, the leader must check whether it has been deposed by exchanging heartbeat messages with a majority of the cluster.**
+- **In the read-index procedure the leader saves its current commit index in a local variable readIndex, used as the lower bound for the version of state the query operates against.**
+- **The leader waits for its state machine to advance at least as far as readIndex, which is current enough to satisfy linearizability.**
+- **The leader can amortize the cost of confirming its leadership by using a single round of heartbeats for any number of accumulated read-only queries.**
+- **Followers can serve reads safely by requesting a current readIndex from the leader (which executes the leadership-confirmation steps) and then applying the wait-and-query steps on their own state machine.**
+- **The read-index approach provides linearizability in an asynchronous model but requires a round of heartbeats to half the cluster for each batch of read-only queries, adding latency.**
+- **As a lease-based alternative, once a leader's heartbeats are acknowledged by a majority it assumes no other server will become leader for about an election timeout and serves reads during that period without additional communication.**
+- **The lease approach assumes a bound on clock drift across servers, and if that assumption is violated the system could return arbitrarily stale information.**
+- **Linearizability requires each read to reflect a state of the system after the read was initiated and to at least return the latest committed write** — a system allowing stale reads would only provide the weaker guarantee of serializability.
+- **Leadership transfer is an optional Raft extension that allows one server to transfer its leadership to another, useful when a leader must step down to avoid the cluster being idle for an election timeout.**
+- **In leadership transfer the prior leader first stops accepting new client requests, then fully updates the target server's log to match its own using normal log replication.**
+- **The prior leader sends a TimeoutNow request to the target server, which has the same effect as the target's election timer firing, causing it to immediately start a new election without waiting for its election timeout.**
+- **If leadership transfer does not complete within about an election timeout, the prior leader aborts the transfer and resumes accepting client requests** — a mistaken transfer costs at most one extra election.
+- **The disruptive-server problem** — a server not in the new configuration stops receiving heartbeats, times out, and sends RequestVote RPCs with higher term numbers that force the current leader to revert to follower state, repeating and causing poor availability.
+- **The fix for disruptive servers** — if a server receives a RequestVote request within the minimum election timeout of hearing from a current leader, it does not update its term or grant its vote.
+- **Because the minimum-election-timeout change conflicts with the leadership transfer mechanism, RequestVote requests can include a special flag so other servers process them even when they believe a current cluster leader exists.**
+- **In the Pre-Vote algorithm a candidate only increments its term if it first learns from a majority that they would grant their votes, conditioned on the candidate's log being sufficiently up-to-date and the voters not having heard from a valid leader for at least a baseline election timeout.**
+- **Pre-Vote solves the problem of a partitioned server disrupting the cluster when it rejoins, because while partitioned it cannot increment its term and after rejoining the other servers are still receiving heartbeats from the leader.**
+- **Under CheckQuorum, a leader in Raft steps down if an election timeout elapses without a successful round of heartbeats to a majority of its cluster, so that clients can retry their requests with another server.**
+- **The Pre-Vote phase does not by itself solve the problem of disruptive servers, because there are situations where the disruptive server's log is sufficiently up-to-date that starting an election would still be disruptive.**
+- **Leadership transfer preserves safety because receiving a TimeoutNow request is equivalent to the target server's clock jumping forward quickly, which Raft already tolerates.**
+- **Raft has a formal specification for the consensus algorithm written in the TLA+ language, copyright 2014 Diego Ongaro.**
+- **The Raft paper states the formal TLA+ specification is about 400 lines long.**
+- **The thesis states the formal TLA+ specification is about 450 lines long.**
+- **The proof that verifies the State Machine Safety property relies on the specification alone and is about 3,500 words long.**
+- **Given Leader Completeness, the State Machine Safety property follows** — at the lowest term in which any server applies a given log index, Leader Completeness guarantees leaders of all higher terms store that same entry, so servers applying that index later apply the same value.
+- **The Leader Completeness proof proceeds by contradiction** — assume a leader commits an entry in term T that the leader of some smallest future term U>T does not store.
+- **The contradiction hinges on majority overlap** — because leaderT replicated the entry on a majority and leaderU received votes from a majority, at least one server (the voter) both accepted the entry and voted for leaderU.
+- **The TLA+ specification encodes quorum overlap directly** — a quorum is any subset whose cardinality exceeds half the servers, and the only important property is that every quorum overlaps with every other.
+- **A user study with 43 students at two universities showed Raft is significantly easier to understand than Paxos** — after learning both, 33 of the students answered questions about Raft better than questions about Paxos.
+- **On average participants scored 22** — .6% higher on the Raft quiz than on the Paxos quiz, with a mean Raft score of 25.7 out of a possible 60 points.
+- **The Raft paper reports the mean Paxos quiz score as 20** — .8 out of 60.
+- **Randomized election timeouts make split votes rare** — in the absence of randomness leader election consistently took longer than 10 seconds due to many split votes.
+- **Adding 5 ms of randomness to the election timeout produced a median downtime of 287 ms, and with 50 ms of randomness the worst-case election completion time over 1,000 trials was 513 ms.**
+- **The authors recommend a conservative election timeout such as 150 to 300 ms, which is unlikely to cause unnecessary leader changes while still providing good availability.**
+- **The Log Completeness Property was mechanically proven using the TLA proof system, while the State Machine Safety property was established by an informal but complete proof.**
+- **Paxos first defines a protocol that reaches agreement on a single decision (single-decree Paxos), then combines multiple instances of that protocol to agree on a series of decisions such as a log (multi-Paxos).**
+- **The greatest difference between Raft and Paxos is Raft's strong leadership** — Raft uses leader election as an essential part of consensus, whereas in Paxos leader election is orthogonal to the basic protocol and serves only as a performance optimization.
+- **Viewstamped Replication and Zab are leader-based consensus algorithms closer in structure to Raft than Paxos, each first electing a leader and then having that leader manage the replicated log.**
+- **In Raft the log comparison check during voting ensures a new leader already has all committed entries, so no log entries need to be transferred to the new leader.**
+- **Log entries in Raft flow in only one direction, outward from the leader in AppendEntries RPCs, whereas in Viewstamped Replication they flow in both directions, which adds mechanism and complexity.**
+- **Paxos, Viewstamped Replication Revisited, and unoptimized Zab need additional mechanism to bring a new leader up to date because they do not choose the leader based on its log.**
+- **A new leader in Raft transfers just the minimal number of entries needed to make other servers' logs match its own, and entries are never renumbered, so the same entry keeps the same index and term across logs for all time.**
+- **Raft has less mechanism than Viewstamped Replication and Zab** — VR-Revisited and Zab each define 10 different message types, while Raft has only 4 message types (two RPC requests and their responses).
+- **Zab (ZooKeeper Atomic Broadcast) is a leader-based algorithm that resembles Viewstamped Replication and is used in Apache ZooKeeper, the most popular open-source consensus system.**
+- **The various consensus algorithms neutralize a deposed leader using a monotonically increasing number, called a term in Raft, a proposal number in Paxos, a view in Viewstamped Replication, and an epoch in Zab.**
+- **Raft produces a result equivalent to multi-Paxos and is as efficient as Paxos, but has a different structure that makes it more understandable and a better foundation for practical systems.**
+- **The RequestVote RPC arguments are term (candidate's term), candidateId, lastLogIndex (index of candidate's last log entry), and lastLogTerm (term of candidate's last log entry).**
+- **The RequestVote RPC results are term (currentTerm, for the candidate to update itself) and voteGranted (true means the candidate received the vote).**
+- **The RequestVote receiver grants its vote only if votedFor is null or equals candidateId and the candidate's log is at least as up-to-date as the receiver's log, and replies false if term < currentTerm.**
+- **The AppendEntries RPC arguments are term, leaderId, prevLogIndex, prevLogTerm, entries[] (empty for heartbeat), and leaderCommit (the leader's commitIndex).**
+- **The AppendEntries RPC results are term (currentTerm, for the leader to update itself) and success (true if the follower contained an entry matching prevLogIndex and prevLogTerm).**
+- **AppendEntries receiver rule** — reply false if the log does not contain an entry at prevLogIndex whose term matches prevLogTerm.
+- **AppendEntries receiver rule** — if an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it.
+- **AppendEntries receiver rule** — if leaderCommit > commitIndex, set commitIndex to the minimum of leaderCommit and the index of the last new entry.
+- **Leader volatile state consists of nextIndex[] (for each server, the index of the next log entry to send, initialized to the leader's last log index + 1) and matchIndex[] (initialized to 0), reinitialized after every election.**
+- **On all servers, if commitIndex > lastApplied the server increments lastApplied and applies log[lastApplied] to its state machine.**
+- **On all servers, if an RPC request or response contains a term T greater than currentTerm, the server sets currentTerm to T and converts to follower.**
+- **The leader advances its commit index by the rule** — if there exists an N such that N > commitIndex, a majority of matchIndex[i] >= N, and log[N].term == currentTerm, then set commitIndex = N.
+- **In the TLA+ specification, the leader's AdvanceCommitIndex only advances the commit index to the maximum quorum-agreed index when that entry's term equals the leader's current term, matching the paper's log[N]** — .term == currentTerm restriction.
+- **A leader knows that an entry from its current term is committed once it is stored on a majority, but a leader cannot immediately conclude that an entry from a previous term is committed once it is stored on a majority.**
+- **Figure 8 illustrates a situation where an old log entry is stored on a majority of servers, yet can still be overwritten by a future leader.**
+- **In the Figure 8 scenario, if S1 crashes (case d), S5 could be elected leader with votes from S2, S3, and S4 and overwrite the entry with its own entry from term 3.**
+- **There are some situations where a leader could safely conclude that an older log entry is committed (for example if that entry is stored on every server), but Raft takes a more conservative approach for simplicity.**
+- **In the Leader Completeness proof, the committed entry must have been absent from the future leader's log at the time of its election, because leaders never delete or overwrite their own entries.**
+- **In the proof, the voter must have accepted the committed entry from leaderT before voting for leaderU, otherwise it would have rejected leaderT's AppendEntries because its current term would have been higher than T.**
+- **In the proof, the voter still stored the committed entry when it voted for leaderU, because every intervening leader contained the entry, leaders never remove entries, and followers only remove entries that conflict with the leader.**
+- **The Leader Completeness proof concludes that the leaders of all terms greater than T must contain all entries from term T that are committed in term T.**
+- **Raft requires servers to apply entries in log index order, which combined with the State Machine Safety Property means all servers apply exactly the same set of log entries to their state machines in the same order.**
+- **Once a server adds a new configuration entry to its log it uses that configuration for all future decisions, regardless of whether the entry is committed (a server always uses the latest configuration in its log).**
+- **A log entry for a configuration change can be removed if leadership changes, in which case a server must be prepared to fall back to the previous configuration in its log.**
+- **When adding or removing a single server, any majority of the old cluster overlaps with any majority of the new cluster, so it is safe to switch directly to the new configuration.**
+- **The thesis describes its first membership-change approach only for completeness and recommends the simpler single-server approach instead, since handling arbitrary changes requires extra complexity.**
+- **Replication of entries to a new server is split into rounds, and the leader adds the new server only if the last round lasted less than an election timeout, otherwise aborting the configuration change.**
+- **A leader that is removed from the new configuration steps down once it has committed the Cnew log entry, waiting until then because stepping down earlier could let it time out and become leader again, delaying progress.**
+- **Servers process incoming RPC requests without consulting their own current configuration, accepting AppendEntries from and granting votes to a leader or candidate not in the server's latest configuration.**
+- **The InstallSnapshot RPC arguments are term, leaderId, lastIncludedIndex, lastIncludedTerm, offset, data[], and done.**
+- **When a follower receives a snapshot describing a prefix of its log, the entries covered by the snapshot are deleted but entries following the snapshot are still valid and must be retained.**
+- **Snapshots include the lastIncludedIndex and lastIncludedTerm to support the AppendEntries consistency check for the first entry following the snapshot, and also include the latest configuration as of the last included index to enable membership changes.**
+- **Copy-on-write techniques allow new updates to be applied without impacting the snapshot being written, for example using the operating system's copy-on-write support via Linux fork to copy the server's address space.**
+- **Incremental approaches to compaction such as log cleaning and log-structured merge trees operate on only a fraction of the data at once, so they spread the load of compaction more evenly over time.**
