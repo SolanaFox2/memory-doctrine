@@ -258,3 +258,15 @@ def test_uncited_sources_matches_by_basename():
     pbs = {"sub/a.md": ["content"], "other.md": ["x"]}
     out = uncited_sources(pbs, evidence)
     assert set(out) == {"other.md"}
+
+
+def test_uncited_sources_ambiguous_basename_not_absorbed():
+    # Two sources share basename "notes.md"; only 2025/notes.md was cited by
+    # full path. The bare-basename ambiguity must not silently mark 2026/notes.md
+    # as cited — it should be surfaced as uncited.
+    scored = [_scored("Cited.", ["2025/notes.md"], ["s"])]
+    _, evidence = split(scored)
+    pbs = {"2025/notes.md": ["a"], "2026/notes.md": ["uncited content"]}
+    out = uncited_sources(pbs, evidence)
+    assert set(out) == {"2026/notes.md"}
+    assert "uncited content" in out["2026/notes.md"][0]

@@ -127,6 +127,10 @@ exits non-zero only if `doctrine_lint` fails. The output `./my-kpm/` is a
 complete, self-validating KPM package (`knowledge.json`, `axioms/`, `evidence/`,
 `README.md`, vendored `scripts/doctrine_lint.py`).
 
+Add `--keep-uncited` (to either `run` or `build`) to preserve sources that no
+axiom cited into a `reference/` folder, so nothing is silently dropped — useful
+when you want a full audit trail of the input notes.
+
 ## Why skill mode
 
 Running it this way means **no `ANTHROPIC_API_KEY` is needed** for `ingest` or

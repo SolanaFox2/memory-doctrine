@@ -130,7 +130,12 @@ def _relative_source(path: Path, input_dir: Path) -> str:
 
 
 def _passages_for_file(path: Path, input_dir: Path, cap: int) -> List[Candidate]:
-    raw = path.read_text(encoding="utf-8")
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # One non-UTF-8 note must not abort the whole run; skip it loudly.
+        print(f"warning: {path} is not valid UTF-8 — skipped", file=sys.stderr)
+        return []
     body_start = _frontmatter_offset(raw)
     source = _relative_source(path, input_dir)
     out: List[Candidate] = []

@@ -1,7 +1,7 @@
 ---
 id: G1-trigger-memory
 type: axiom
-cluster: G-prospective-agentic
+cluster: G-prospective
 title: Prospective memory — prefer focal/event triggers over monitored polling
 statement: >
   Remembering to DO something at the right future moment is a distinct memory system

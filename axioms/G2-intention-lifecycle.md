@@ -1,7 +1,7 @@
 ---
 id: G2-intention-lifecycle
 type: axiom
-cluster: G-prospective-agentic
+cluster: G-prospective
 title: Intention lifecycle — boost on open, inhibit on completion
 statement: >
   Open intentions sit at heightened activation (intention-superiority effect) and must be

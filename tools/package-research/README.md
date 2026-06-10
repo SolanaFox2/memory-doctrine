@@ -77,6 +77,7 @@ Options:
 | `--out DIR` | **Required.** Where the KPM package is written. |
 | `--model MODEL` | Anthropic model for the LLM stages (default: `claude-sonnet-4-5`). |
 | `--name NAME` | Package name in `knowledge.json` (e.g. `@kpm/caching-basics`). |
+| `--keep-uncited` | Preserve sources no axiom cited into `reference/`, so nothing is silently dropped. |
 
 On success it prints a summary like:
 

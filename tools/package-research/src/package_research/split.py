@@ -18,6 +18,7 @@ emitted evidence note (the doctrine lint requires this downstream).
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -137,15 +138,23 @@ def uncited_sources(
 ) -> Dict[str, List[str]]:
     """Return the sources that have content but no evidence note cites them.
 
-    A file is "represented" if some emitted evidence note's ``ref`` shares its
-    basename (agents cite bare filenames; ingest keys by relative path). Returns
-    ``{source: [passage, ...]}`` only for sources with non-empty content — the
-    material that would otherwise be silently dropped from the package.
+    A file is "represented" if an emitted evidence note cites it by full path,
+    or by basename when that basename is *unambiguous* among the sources (agents
+    cite bare filenames; ingest keys by relative path). When two sources share a
+    basename (e.g. ``2025/notes.md`` and ``2026/notes.md``), a bare-filename
+    citation is ambiguous, so it does not count for either — the uncited one is
+    surfaced rather than silently absorbed. Returns ``{source: [passage, ...]}``
+    only for sources with non-empty content — the material that would otherwise
+    be silently dropped from the package.
     """
-    cited = {Path(n.ref).name for n in evidence_notes}
+    cited_full = {n.ref for n in evidence_notes}
+    cited_base = {Path(n.ref).name for n in evidence_notes}
+    src_base_counts = Counter(Path(s).name for s in source_passages)
     out: Dict[str, List[str]] = {}
     for src, passages in source_passages.items():
-        if Path(src).name in cited:
+        base = Path(src).name
+        is_cited = src in cited_full or (base in cited_base and src_base_counts[base] == 1)
+        if is_cited:
             continue
         kept = [p for p in passages if p.strip()]
         if kept:

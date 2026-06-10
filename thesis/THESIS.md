@@ -3,7 +3,7 @@
 
 *A thesis in the theory of memory and knowledge representation.*
 
-**Version 1.1 · CC BY 4.0**
+**Doctrine v1.3.0 · CC BY 4.0** — the axiom set is as locked in v1.1; releases since have been packaging and publication changes, not content revisions.
 **Companion artifact:** the doctrine as a machine-checkable knowledge package — <https://github.com/Treibs/memory-doctrine>
 
 ---
