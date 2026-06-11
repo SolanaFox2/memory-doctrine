@@ -22,7 +22,7 @@ from typing import List
 from .distill import Idea
 from .llm import CompleteJSON
 
-_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "score.md"
+_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "score.md"
 
 # JSON schema handed to the model (and to complete_json) to constrain output.
 SCORE_SCHEMA: dict = {

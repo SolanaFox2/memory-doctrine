@@ -34,11 +34,12 @@ from typing import Dict, List
 
 from .split import AxiomNote, EvidenceNote, _slugify
 
-# The vendored validator lives next to this module's source tree. It is normally
-# a symlink to the doctrine's canonical scripts/doctrine_lint.py; the canonical
-# path is the fallback for when that symlink can't be followed (partial checkout).
+# The vendored validator ships inside the package (so it survives a wheel/pip
+# install, not just an editable checkout). A test keeps it byte-identical to the
+# doctrine's canonical scripts/doctrine_lint.py; that canonical path is the
+# fallback for the in-repo case where someone deletes the vendored copy.
 _PARENTS = Path(__file__).resolve().parents
-_VENDOR_LINT = _PARENTS[2] / "vendor" / "doctrine_lint.py"
+_VENDOR_LINT = _PARENTS[0] / "vendor" / "doctrine_lint.py"
 _CANONICAL_LINT = _PARENTS[4] / "scripts" / "doctrine_lint.py" if len(_PARENTS) > 4 else None
 
 _RELATION_KEYS = (
