@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import List
 
 from .llm import CompleteJSON
-from .llm_core import UNTRUSTED_PREAMBLE, delimit_untrusted
+from .llm_core import UNTRUSTED_PREAMBLE, coerce_result_dict, delimit_untrusted
 from .score import ScoredIdea
 
 _PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "verify.md"
@@ -120,9 +120,9 @@ def verify_idea(idea: ScoredIdea, complete_json: CompleteJSON) -> VerificationRe
             adjusted_confidence=0.0,
         )
 
-    result = complete_json(build_prompt(idea), VERIFY_SCHEMA)
-    if not isinstance(result, dict):
-        result = {}
+    result = coerce_result_dict(
+        complete_json(build_prompt(idea), VERIFY_SCHEMA), stage="verify", required_key="survives"
+    )
 
     survives = bool(result.get("survives"))
     adjusted = _clamp_confidence(result.get("adjusted_confidence"), idea.confidence)

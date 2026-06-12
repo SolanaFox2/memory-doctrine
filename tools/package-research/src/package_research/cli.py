@@ -41,6 +41,7 @@ from .config import Config
 from .distill import distill
 from .ingest import Candidate, ingest, passages_by_source
 from .llm import LLMClient
+from .llm_core import malformed_counts, reset_malformed
 from .score import ScoredIdea, score
 from .split import split, uncited_sources
 from .validate import ValidationResult, validate
@@ -175,6 +176,7 @@ def _summarize(
     n_sources: int = 0,
     uncited: "Optional[List[str]]" = None,
     kept_uncited: bool = False,
+    malformed: "Optional[dict]" = None,
 ) -> None:
     """Print a clear, human-readable run summary."""
     print("package-research run complete", file=out)
@@ -182,6 +184,17 @@ def _summarize(
     print(f"  ideas distilled     : {n_ideas}", file=out)
     print(f"  ideas scored        : {n_scored}", file=out)
     print(f"  kept after verify   : {n_kept}", file=out)
+
+    # Malformed model outputs are never silent (an all-malformed run must be
+    # distinguishable from a legitimate "nothing survived").
+    malformed = malformed or {}
+    if malformed:
+        per_stage = ", ".join(f"{k}={v}" for k, v in sorted(malformed.items()))
+        print(
+            f"  malformed outputs   : {sum(malformed.values())} ({per_stage}) — "
+            "low counts above may be model garbage, not judgment",
+            file=out,
+        )
     print(f"  output package      : {package_dir}", file=out)
 
     # Source coverage — never drop a file silently (no hidden loss).
@@ -242,6 +255,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
 
     complete_json = llm.complete_json
+    reset_malformed()
 
     # --- the full pipeline -------------------------------------------------
     candidates = ingest(config)
@@ -280,6 +294,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         n_sources=len(pbs),
         uncited=sorted(uncited),
         kept_uncited=getattr(args, "keep_uncited", False),
+        malformed=malformed_counts(),
     )
 
     # Lint is the hard gate: a structurally invalid package is a failure.

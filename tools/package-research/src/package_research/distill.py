@@ -17,7 +17,7 @@ from typing import List
 
 from .ingest import Candidate
 from .llm import CompleteJSON
-from .llm_core import UNTRUSTED_PREAMBLE, delimit_untrusted
+from .llm_core import UNTRUSTED_PREAMBLE, coerce_result_dict, delimit_untrusted
 
 _PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "distill.md"
 
@@ -124,7 +124,11 @@ DEFAULT_BATCH_SIZE = 40
 
 
 def _parse_ideas(result: dict) -> List[Idea]:
-    raw_ideas = result.get("ideas", []) if isinstance(result, dict) else []
+    result = coerce_result_dict(result, stage="distill", required_key="ideas")
+    raw_ideas = result.get("ideas") or []
+    if not isinstance(raw_ideas, list):
+        coerce_result_dict(raw_ideas, stage="distill")  # records malformed
+        raw_ideas = []
     ideas: List[Idea] = []
     for item in raw_ideas:
         statement = (item.get("statement") or "").strip()

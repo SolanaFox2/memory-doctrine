@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import random
+import sys
 import time
 from typing import Any, Callable, Optional
 
@@ -54,6 +55,46 @@ class TruncationError(ProviderJSONError):
 
 class RetriesExhaustedError(LLMError):
     """A transient API failure persisted through every backoff retry."""
+
+
+# ── malformed-output accounting ────────────────────────────────────────────────
+#
+# "Model returned garbage" must never be silent: an all-malformed run would
+# otherwise produce an empty/zero package that passes lint and is
+# indistinguishable from a legitimate "nothing survived" (REVIEW.md PR-H4).
+
+_malformed_counts: dict[str, int] = {}
+
+
+def record_malformed(stage: str, detail: str = "") -> None:
+    """Count and warn (stderr) that *stage* received unusable model output."""
+    _malformed_counts[stage] = _malformed_counts.get(stage, 0) + 1
+    suffix = f": {detail}" if detail else ""
+    print(f"warning: {stage}: model returned malformed output{suffix}", file=sys.stderr)
+
+
+def malformed_counts() -> dict[str, int]:
+    """Per-stage malformed-output counts recorded since the last reset."""
+    return dict(_malformed_counts)
+
+
+def reset_malformed() -> None:
+    """Clear the malformed-output counters (call at the start of a run)."""
+    _malformed_counts.clear()
+
+
+def coerce_result_dict(result: object, *, stage: str, required_key: str = "") -> dict:
+    """Return *result* if it is a usable dict, else record malformed and return ``{}``.
+
+    A dict missing *required_key* (when given) also counts as malformed — the
+    schema demanded it, so its absence is model garbage, not a judgment call.
+    """
+    if not isinstance(result, dict):
+        record_malformed(stage, f"expected a JSON object, got {type(result).__name__}")
+        return {}
+    if required_key and required_key not in result:
+        record_malformed(stage, f"missing required key {required_key!r}")
+    return result
 
 
 # ── untrusted-content isolation ────────────────────────────────────────────────

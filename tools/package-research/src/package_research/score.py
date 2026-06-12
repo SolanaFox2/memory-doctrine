@@ -21,7 +21,7 @@ from typing import List
 
 from .distill import Idea
 from .llm import CompleteJSON
-from .llm_core import UNTRUSTED_PREAMBLE, delimit_untrusted
+from .llm_core import UNTRUSTED_PREAMBLE, coerce_result_dict, delimit_untrusted
 
 _PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "score.md"
 
@@ -104,9 +104,9 @@ def _clamp_generativity(value: object) -> int:
 def score_idea(idea: Idea, complete_json: CompleteJSON) -> ScoredIdea:
     """Score a single idea against doctrine C1, returning a ScoredIdea."""
     prompt = build_prompt(idea)
-    result = complete_json(prompt, SCORE_SCHEMA)
-    if not isinstance(result, dict):
-        result = {}
+    result = coerce_result_dict(
+        complete_json(prompt, SCORE_SCHEMA), stage="score", required_key="confidence"
+    )
     return ScoredIdea(
         statement=idea.statement,
         supporting_source_files=list(idea.supporting_source_files),
