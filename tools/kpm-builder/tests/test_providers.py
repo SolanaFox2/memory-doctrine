@@ -178,3 +178,54 @@ class TestMakeProvider:
             assert callable(fn)
         except ImportError:
             pytest.skip("openai SDK not installed — skipping make_provider construction test")
+
+
+# ── shared-seam behaviors (REVIEW.md KPM-H2/KPM-H3) ────────────────────────────
+
+
+class TestSharedSeamExtraction:
+    """extract_json is now the shared raw_decode-based implementation."""
+
+    def test_multi_object_prose_returns_first(self):
+        from kpm_builder.providers import extract_json
+
+        assert extract_json('{"a": 1} junk {"b": 2}') == {"a": 1}
+
+    def test_truncated_raises_typed_error(self):
+        from kpm_builder.providers import ProviderJSONError, extract_json
+
+        with pytest.raises(ProviderJSONError):
+            extract_json('{"a": [1, 2')
+
+    def test_error_carries_snippet(self):
+        from kpm_builder.providers import ProviderJSONError, extract_json
+
+        with pytest.raises(ProviderJSONError) as ei:
+            extract_json("garbage output")
+        assert "garbage output" in str(ei.value)
+
+
+class TestProviderRetryContract:
+    """The provider layer exposes the seam's retry/truncation machinery."""
+
+    def test_truncation_check_exported(self):
+        from kpm_builder.providers import TruncationError
+        from package_research.llm_core import check_truncation
+
+        with pytest.raises(TruncationError):
+            check_truncation("max_tokens")
+
+    def test_default_max_tokens_fits_relate_propose(self):
+        # The relate propose call returns an array over ALL axioms; the old
+        # hardcoded 1024 cap routinely truncated it (KPM-H2).
+        from kpm_builder.providers import DEFAULT_MAX_TOKENS
+
+        assert DEFAULT_MAX_TOKENS >= 4096
+
+    def test_make_provider_accepts_robustness_kwargs(self, monkeypatch):
+        import inspect
+
+        from kpm_builder.providers import make_provider
+
+        params = inspect.signature(make_provider).parameters
+        assert {"max_tokens", "timeout", "max_retries"} <= set(params)

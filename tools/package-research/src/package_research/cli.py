@@ -160,7 +160,7 @@ def _make_llm(config: Config) -> LLMClient:
     Factored out so tests can monkeypatch it with a fake (no API key needed).
     """
     api_key = Config.resolve_api_key()  # raises a clear error if missing
-    return LLMClient(api_key=api_key, model=config.model)
+    return LLMClient(api_key=api_key, model=config.model, max_tokens=config.max_tokens)
 
 
 def _summarize(
@@ -245,7 +245,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     # --- the full pipeline -------------------------------------------------
     candidates = ingest(config)
-    ideas = distill(candidates, complete_json)
+    ideas = distill(candidates, complete_json, batch_size=config.distill_batch_size)
     scored = score(ideas, complete_json)
     verified = verify(scored, complete_json)
     # Preserve the source content in the store (keep details, not just headlines).

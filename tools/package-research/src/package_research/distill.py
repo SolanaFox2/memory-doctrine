@@ -109,21 +109,13 @@ def _ordered_union(a: List[str], b: List[str]) -> List[str]:
     return list(seen)
 
 
-def distill(candidates: List[Candidate], complete_json: CompleteJSON) -> List[Idea]:
-    """Distill candidate passages into a deduped set of generative ideas.
+# Candidates per LLM call. One giant call over all candidates (the old
+# behavior) routinely overflowed the response token cap on real corpora and
+# silently dropped ideas; batches keep each response comfortably inside it.
+DEFAULT_BATCH_SIZE = 40
 
-    Args:
-        candidates: The passages produced by the ingest stage.
-        complete_json: A ``(prompt, schema) -> dict`` callable. In production
-            pass ``LLMClient.complete_json``; in tests pass a fake that returns
-            fixed JSON so no API key is required.
-    """
-    if not candidates:
-        return []
 
-    prompt = build_prompt(candidates)
-    result = complete_json(prompt, DISTILL_SCHEMA)
-
+def _parse_ideas(result: dict) -> List[Idea]:
     raw_ideas = result.get("ideas", []) if isinstance(result, dict) else []
     ideas: List[Idea] = []
     for item in raw_ideas:
@@ -137,4 +129,36 @@ def distill(candidates: List[Candidate], complete_json: CompleteJSON) -> List[Id
                 supporting_snippets=list(item.get("supporting_snippets") or []),
             )
         )
+    return ideas
+
+
+def distill(
+    candidates: List[Candidate],
+    complete_json: CompleteJSON,
+    *,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> List[Idea]:
+    """Distill candidate passages into a deduped set of generative ideas.
+
+    Candidates are sent in batches of *batch_size* per call and the per-batch
+    ideas are unioned via :func:`_dedupe` (identical statements merge their
+    support), so large corpora can't overflow a single response.
+
+    Args:
+        candidates: The passages produced by the ingest stage.
+        complete_json: A ``(prompt, schema) -> dict`` callable. In production
+            pass ``LLMClient.complete_json``; in tests pass a fake that returns
+            fixed JSON so no API key is required.
+        batch_size: Maximum candidates per LLM call (>= 1).
+    """
+    if not candidates:
+        return []
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+
+    ideas: List[Idea] = []
+    for start in range(0, len(candidates), batch_size):
+        batch = candidates[start : start + batch_size]
+        result = complete_json(build_prompt(batch), DISTILL_SCHEMA)
+        ideas.extend(_parse_ideas(result))
     return _dedupe(ideas)

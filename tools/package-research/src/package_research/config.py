@@ -42,6 +42,16 @@ class Config(BaseModel):
         ge=100,
         description="Target maximum characters per ingested passage/chunk.",
     )
+    max_tokens: int = Field(
+        default=4096,
+        ge=256,
+        description="Response token cap for LLM calls; hitting it raises TruncationError instead of silently dropping output.",
+    )
+    distill_batch_size: int = Field(
+        default=40,
+        ge=1,
+        description="Candidates per distill LLM call (batched so large corpora can't overflow one response).",
+    )
     # Doctrine-grounded defaults (C1 confidence, A3/E1 generativity).
     default_confidence: float = Field(
         default=0.5,
@@ -91,6 +101,10 @@ class Config(BaseModel):
             data["model"] = m
         if (ms := os.environ.get("PR_MAX_SOURCES")) is not None:
             data["max_sources"] = int(ms)
+        if (mt := os.environ.get("PR_MAX_TOKENS")) is not None:
+            data["max_tokens"] = int(mt)
+        if (bs := os.environ.get("PR_DISTILL_BATCH_SIZE")) is not None:
+            data["distill_batch_size"] = int(bs)
 
         data.update(overrides)
         return cls(**data)

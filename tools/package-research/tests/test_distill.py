@@ -1,5 +1,7 @@
 """Tests for the distill stage — LLM mocked, NO API key required."""
 
+import pytest
+
 from package_research.config import Config
 from package_research.distill import (
     DISTILL_SCHEMA,
@@ -123,3 +125,54 @@ def test_render_candidates_keeps_full_relative_path():
     cands = [Candidate(text="x", source_file="sub/gamma.md", char_span=(0, 1))]
     prompt = build_prompt(cands)
     assert "sub/gamma.md" in prompt
+
+
+def test_distill_batches_large_candidate_sets():
+    """100 candidates at batch_size=40 -> 3 calls, ideas unioned across batches."""
+    cands = [Candidate(text=f"t{i}", source_file=f"n{i}.md", char_span=(0, 2)) for i in range(100)]
+    calls = []
+
+    def fake(prompt, schema):
+        calls.append(prompt)
+        n = len(calls)
+        return {
+            "ideas": [
+                {
+                    "statement": f"Idea from batch {n}.",
+                    "supporting_source_files": [f"n{n}.md"],
+                    "supporting_snippets": [f"s{n}"],
+                },
+                {  # identical statement in every batch: support must union
+                    "statement": "Shared idea.",
+                    "supporting_source_files": [f"n{n}.md"],
+                    "supporting_snippets": [],
+                },
+            ]
+        }
+
+    ideas = distill(cands, fake, batch_size=40)
+    assert len(calls) == 3
+    # Each batch's candidates appear only in its own prompt.
+    assert "n0.md" in calls[0] and "n0.md" not in calls[1]
+    assert "n40.md" in calls[1] and "n99.md" in calls[2]
+    shared = next(i for i in ideas if i.statement == "Shared idea.")
+    assert shared.supporting_source_files == ["n1.md", "n2.md", "n3.md"]
+    assert len(ideas) == 4  # 3 per-batch ideas + 1 merged shared idea
+
+
+def test_distill_single_batch_when_under_batch_size():
+    cands = [Candidate(text="x", source_file="a.md", char_span=(0, 1))]
+    calls = []
+
+    def fake(prompt, schema):
+        calls.append(prompt)
+        return {"ideas": []}
+
+    distill(cands, fake, batch_size=40)
+    assert len(calls) == 1
+
+
+def test_distill_rejects_nonpositive_batch_size():
+    cands = [Candidate(text="x", source_file="a.md", char_span=(0, 1))]
+    with pytest.raises(ValueError):
+        distill(cands, lambda p, s: {"ideas": []}, batch_size=0)
