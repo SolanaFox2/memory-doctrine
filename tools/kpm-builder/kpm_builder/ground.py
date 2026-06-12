@@ -19,6 +19,7 @@ from package_research.llm_core import UNTRUSTED_PREAMBLE, delimit_untrusted
 from dataclasses import dataclass, field
 from typing import Callable
 
+from kpm_builder.schema import GroundVerdict
 from kpm_builder.snapshot import Snapshot
 
 # ── type alias ────────────────────────────────────────────────────────────────
@@ -32,7 +33,7 @@ RESPONSE_SCHEMA: dict = {
     "properties": {
         "verdict": {
             "type": "string",
-            "enum": ["entails", "over_claims", "reject"],
+            "enum": [v.value for v in GroundVerdict],
             "description": (
                 "'entails' = claim is fully and faithfully supported by the source; "
                 "'over_claims' = claim asserts more generality, certainty, scope, "
@@ -65,7 +66,7 @@ RESPONSE_SCHEMA: dict = {
     "additionalProperties": False,
 }
 
-_VALID_VERDICTS = {"entails", "over_claims", "reject"}
+_VALID_VERDICTS = frozenset(v.value for v in GroundVerdict)
 
 # ── system prompt (from the grounding prototype) ──────────────────────────────
 
@@ -137,7 +138,7 @@ def ground(
     raw: dict = complete_json(prompt, RESPONSE_SCHEMA)
 
     verdict_raw = raw.get("verdict", "")
-    verdict = verdict_raw if verdict_raw in _VALID_VERDICTS else "reject"
+    verdict = verdict_raw if verdict_raw in _VALID_VERDICTS else GroundVerdict.REJECT.value
 
     dropped_raw = raw.get("dropped", [])
     if not isinstance(dropped_raw, list):

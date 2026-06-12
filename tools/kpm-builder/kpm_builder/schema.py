@@ -42,6 +42,18 @@ class ConfidenceBucket(Enum):
     UNVERIFIED  = "unverified"
 
 
+class GroundVerdict(Enum):
+    """Grounding verdict (REVIEW.md L5 — one checkable home for the strings).
+
+    Values ARE the wire strings used in JSON schemas, research input, and
+    GroundResult.verdict — external contracts are unchanged; comparison sites
+    use these members instead of scattered string literals.
+    """
+    ENTAILS     = "entails"
+    OVER_CLAIMS = "over_claims"
+    REJECT      = "reject"
+
+
 # ---------------------------------------------------------------------------
 # ScoredIdea
 # ---------------------------------------------------------------------------

@@ -18,21 +18,23 @@ For each (source, claim) pair:
      verdict entails the same statement (REVIEW.md KPM-M7 / EFF-5).
 
 Coverage labeling (per core question):
-  6. grounded = all kept claims have verdict "entails"
-     n_quality_sources = number of sources that passed both gates
+  6. n_quality_sources = number of gate-passing sources whose claim verdict is
+     "entails" (REVIEW.md M1 — a dropped over_claims/reject claim is NOT a
+     quality source and cannot push a beat toward ANSWERED).
+     grounded = n_quality_sources > 0
   7. question_state → CoverageState; assemble a CoverageReport (CONVERGED).
   8. decide(report) → BuildOutcome.
 
 Shipping:
   9. Only SHIPPABLE ideas (verdict == "entails") go through strip → split →
      assemble → validate.  over_claims / reject claims are surfaced in the
-     coverage report as PARTIAL/ABSTAINED but never shipped as supported axioms.
+     coverage report as ABSTAINED but never shipped as supported axioms.
 
 Verdict-to-state mapping for the coverage row:
-  - ALL kept claims entailed           → ANSWERED
-  - ≥1 over_claims / reject, ≥1 kept  → PARTIAL
-  - no sources passed both gates       → ABSTAINED (n_quality_sources=0)
-  - n_quality_sources < 2              → ABSTAINED (per label.question_state)
+  - ≥2 independently entailed claims   → ANSWERED
+  - exactly 1 entailed claim           → ABSTAINED (below the 2-source floor)
+  - no entailed claims                 → ABSTAINED
+  - no sources passed both gates       → NOT_REACHED (nothing researched)
 """
 
 from __future__ import annotations
@@ -58,7 +60,7 @@ from kpm_builder.label import (
     decide,
     question_state,
 )
-from kpm_builder.schema import ConfidenceBucket, ScoredIdea, SourceTier
+from kpm_builder.schema import ConfidenceBucket, GroundVerdict, ScoredIdea, SourceTier
 from kpm_builder.snapshot import Snapshot, passage_span, snapshot
 from kpm_builder.strip import apply_belief_status, strip
 
@@ -83,11 +85,20 @@ def _independence_key(source: Source) -> str:
 
 
 def _make_fetcher(sources: List[Source]) -> Callable[[str], str]:
-    """Build an in-memory fetcher from pre-loaded sources (no network I/O)."""
+    """Build an in-memory fetcher from pre-loaded sources (no network I/O).
+
+    A URL outside the pre-loaded set raises a LookupError naming the URL and
+    the known key set (REVIEW.md M3 — never a bare KeyError)."""
     by_url = {s.url: s.text for s in sources}
 
     def _fetch(url: str) -> str:
-        return by_url[url]  # KeyError propagates — caller's responsibility
+        try:
+            return by_url[url]
+        except KeyError:
+            raise LookupError(
+                f"fetcher has no pre-loaded text for {url!r}; "
+                f"known URLs: {sorted(by_url)}"
+            ) from None
 
     return _fetch
 
@@ -201,7 +212,7 @@ def build_mvp(
     # ------------------------------------------------------------------
     entailing_domains: Dict[str, Set[str]] = {}
     for source, claim, verdict in zip(kept_sources, kept_claims, kept_verdicts):
-        if verdict == "entails":
+        if verdict == GroundVerdict.ENTAILS.value:
             entailing_domains.setdefault(claim, set()).add(_independence_key(source))
 
     kept_buckets: List[ConfidenceBucket] = []
@@ -215,23 +226,17 @@ def build_mvp(
         kept_buckets.append(bucket)
 
     # ------------------------------------------------------------------
-    # 6. Coverage labeling for the single beat question
+    # 6. Coverage labeling for the single beat question (REVIEW.md M1):
+    #    only ENTAILED claims count as quality sources — a dropped
+    #    over_claims/reject claim must neither push the beat to ANSWERED
+    #    nor drive the coverage bucket.
     # ------------------------------------------------------------------
-    n_quality = len(kept_sources)
-    any_entailed = any(v == "entails" for v in kept_verdicts) if kept_verdicts else False
-    has_over_claims = any(v in ("over_claims", "reject") for v in kept_verdicts)
-
-    # Determine grounded and survived_refuter for question_state:
-    # - grounded  = at least one claim was faithfully entailed by its source.
-    #               (over_claims / reject claims are still kept in the coverage row
-    #               but surfaced as non-supported; the question counts as "answered"
-    #               when at least one entailed claim addresses it.)
-    # - survived_refuter = True for MVP (no refuter run)
-    grounded = any_entailed
+    n_quality = sum(1 for v in kept_verdicts if v == GroundVerdict.ENTAILS.value)
+    grounded = n_quality > 0
     survived_refuter = True  # MVP: refuter is bypassed
 
     cov_state = question_state(
-        researched=n_quality > 0,
+        researched=len(kept_sources) > 0,
         grounded=grounded,
         survived_refuter=survived_refuter,
         n_quality_sources=n_quality,
@@ -239,11 +244,16 @@ def build_mvp(
     )
 
     # Aggregate confidence bucket for the coverage row:
-    # The "weakest" bucket among kept claims (or UNVERIFIED if nothing kept).
-    if kept_buckets:
-        from kpm_builder.confidence import BUCKET_RANK, _min_bucket  # type: ignore[attr-defined]
-        agg_bucket: ConfidenceBucket | None = kept_buckets[0]
-        for b in kept_buckets[1:]:
+    # the "weakest" bucket among SHIPPABLE (entailed) claims — dropped claims
+    # don't drive it (or None if nothing entailed).
+    entailed_buckets = [
+        b for b, v in zip(kept_buckets, kept_verdicts)
+        if v == GroundVerdict.ENTAILS.value
+    ]
+    if entailed_buckets:
+        from kpm_builder.confidence import _min_bucket  # type: ignore[attr-defined]
+        agg_bucket: ConfidenceBucket | None = entailed_buckets[0]
+        for b in entailed_buckets[1:]:
             agg_bucket = _min_bucket(agg_bucket, b)  # type: ignore[arg-type]
     else:
         agg_bucket = None
@@ -273,7 +283,7 @@ def build_mvp(
         kept_verdicts,
         kept_buckets,
     ):
-        if verdict != "entails":
+        if verdict != GroundVerdict.ENTAILS.value:
             # over_claims / reject: surface in coverage but DO NOT ship.
             continue
 

@@ -229,3 +229,18 @@ class TestProviderRetryContract:
 
         params = inspect.signature(make_provider).parameters
         assert {"max_tokens", "timeout", "max_retries"} <= set(params)
+
+
+# ── REVIEW.md L1 — missing env key fails with a named RuntimeError ─────────────
+
+
+class TestMissingEnvKey:
+    def test_missing_key_raises_runtime_error_naming_the_var(self, monkeypatch):
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        with pytest.raises(RuntimeError, match="DEEPSEEK_API_KEY"):
+            make_provider(Family.DEEPSEEK)
+
+    def test_empty_key_raises_runtime_error(self, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "   ")
+        with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+            make_provider(Family.ANTHROPIC)

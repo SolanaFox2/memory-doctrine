@@ -23,7 +23,9 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field, ValidationError
 
 from kpm_builder.confidence import confidence, _min_bucket
 from kpm_builder.gate import Source, classify_tier
@@ -35,7 +37,7 @@ from kpm_builder.label import (
     decide,
     question_state,
 )
-from kpm_builder.schema import ConfidenceBucket, ScoredIdea, SourceTier
+from kpm_builder.schema import ConfidenceBucket, GroundVerdict, ScoredIdea, SourceTier
 from kpm_builder.snapshot import passage_span, snapshot
 from kpm_builder.strip import apply_belief_status, strip
 
@@ -50,6 +52,58 @@ from package_research.validate import validate
 
 _DEFAULT_FETCHED_AT = "2026-01-01T00:00:00Z"
 _DEFAULT_RUN_DATE = "2026-01-01"
+
+
+# ---------------------------------------------------------------------------
+# Input validation (REVIEW.md M2) — a malformed beat fails up front with a
+# named error instead of a bare KeyError mid-build; the echoed research log
+# therefore only ever carries shape-checked input.
+# ---------------------------------------------------------------------------
+
+class ResearchInputError(ValueError):
+    """The research JSON handed to build_from_research is malformed."""
+
+
+class _SourceModel(BaseModel):
+    url: str
+    text: str
+    venue: str = ""
+
+
+class _ClaimModel(BaseModel):
+    statement: str
+    source: _SourceModel
+    ground_verdict: Literal["entails", "over_claims", "reject"]
+    supporting_passage: Optional[str] = None
+    n_corroborations: int = 1
+    survived_refuter: bool = True
+    generativity: int = Field(default=3, ge=1, le=5)
+
+
+class _BeatModel(BaseModel):
+    question: str
+    claims: List[_ClaimModel] = Field(default_factory=list)
+
+
+def _validate_research_input(
+    contract: Any, beats: Any
+) -> List[_BeatModel]:
+    """Shape-check the research input; raise ResearchInputError naming the spot."""
+    if not isinstance(contract, dict):
+        raise ResearchInputError(
+            f"contract must be a JSON object, got {type(contract).__name__}"
+        )
+    if not isinstance(beats, list):
+        raise ResearchInputError(
+            f"beats must be a JSON array, got {type(beats).__name__}"
+        )
+    validated: List[_BeatModel] = []
+    for i, beat in enumerate(beats):
+        try:
+            validated.append(_BeatModel.model_validate(beat))
+        except ValidationError as exc:
+            raise ResearchInputError(f"beats[{i}] is malformed: {exc}") from exc
+    return validated
 
 
 # ---------------------------------------------------------------------------
@@ -97,34 +151,35 @@ def build_from_research(
         The decide() verdict: is_kpm, label, coverage report.
         If is_kpm=True  → KPM package written to out_dir.
         If is_kpm=False → research_log.json written to out_dir instead.
+
+    Raises
+    ------
+    ResearchInputError
+        If ``contract``/``beats`` don't match the input shape above
+        (REVIEW.md M2) — validated up front, before anything is written.
     """
     out_dir = Path(out_dir)
+    validated_beats = _validate_research_input(contract, beats)  # REVIEW.md M2
 
     coverage_rows: List[CoverageRow] = []
     internal_ideas: List[ScoredIdea] = []
 
-    for beat in beats:
-        question = beat["question"]
-        claims = beat.get("claims", [])
+    for beat in validated_beats:
+        question = beat.question
 
         # Build per-claim pipeline (NO LLM — verdicts are inputs).
+        # Only ENTAILED claims count as quality sources or feed the coverage
+        # bucket (REVIEW.md M1) — a dropped over_claims/reject claim must
+        # neither push a beat to ANSWERED nor drive its bucket.
         grounded_claims = []       # ground_verdict == "entails"
-        n_quality_sources = 0      # count of claims that passed (any verdict except reject)
-        claim_buckets: List[ConfidenceBucket] = []
+        n_quality_sources = 0      # entailed claims only
+        claim_buckets: List[ConfidenceBucket] = []   # entailed claims only
 
-        for claim_dict in claims:
-            statement = claim_dict["statement"]
-            src_dict = claim_dict["source"]
-            ground_verdict = claim_dict["ground_verdict"]
-            supporting_passage = claim_dict.get("supporting_passage")
-            n_corroborations = claim_dict.get("n_corroborations", 1)
-            survived_refuter = claim_dict.get("survived_refuter", True)
-            generativity = claim_dict.get("generativity", 3)
-
+        for claim in beat.claims:
             source = Source(
-                url=src_dict["url"],
-                text=src_dict["text"],
-                venue=src_dict.get("venue", ""),
+                url=claim.source.url,
+                text=claim.source.text,
+                venue=claim.source.venue,
             )
 
             # Snapshot — fetcher is just lambda u: source.text (text is already fetched).
@@ -137,30 +192,28 @@ def build_from_research(
 
             tier = classify_tier(source)
 
+            if claim.ground_verdict != GroundVerdict.ENTAILS.value:
+                continue  # surfaced via coverage state, never as a quality source
+
             bucket = confidence(
                 tier=tier,
-                n_independent_corroborations=n_corroborations,
-                ground_verdict=ground_verdict,
+                n_independent_corroborations=claim.n_corroborations,
+                ground_verdict=claim.ground_verdict,
                 has_unresolved_contradiction=False,
             )
 
+            n_quality_sources += 1
             claim_buckets.append(bucket)
-
-            # Count quality sources: all non-reject verdicts are "kept"
-            if ground_verdict != "reject":
-                n_quality_sources += 1
-
-            if ground_verdict == "entails":
-                grounded_claims.append({
-                    "statement": statement,
-                    "source": source,
-                    "snap": snap,
-                    "supporting_passage": supporting_passage,
-                    "tier": tier,
-                    "bucket": bucket,
-                    "survived_refuter": survived_refuter,
-                    "generativity": generativity,
-                })
+            grounded_claims.append({
+                "statement": claim.statement,
+                "source": source,
+                "snap": snap,
+                "supporting_passage": claim.supporting_passage,
+                "tier": tier,
+                "bucket": bucket,
+                "survived_refuter": claim.survived_refuter,
+                "generativity": claim.generativity,
+            })
 
         # Coverage state for this beat.
         grounded = len(grounded_claims) > 0
@@ -309,18 +362,24 @@ def main() -> None:
     else:
         raw = Path(args.input).read_text(encoding="utf-8")
 
-    data = json.loads(raw)
-    contract = data["contract"]
-    beats = data["beats"]
     out_dir = Path(args.out)
 
-    outcome = build_from_research(
-        contract,
-        beats,
-        out_dir=out_dir,
-        run_date=args.run_date,
-        fetched_at=args.fetched_at,
-    )
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, dict) or "contract" not in data or "beats" not in data:
+            raise ResearchInputError(
+                'input must be a JSON object with "contract" and "beats" keys'
+            )
+        outcome = build_from_research(
+            data["contract"],
+            data["beats"],
+            out_dir=out_dir,
+            run_date=args.run_date,
+            fetched_at=args.fetched_at,
+        )
+    except (ResearchInputError, json.JSONDecodeError) as exc:
+        print(f"error: build: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # Print results
     print(f"\nOutcome: {outcome.label} (is_kpm={outcome.is_kpm})")

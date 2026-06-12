@@ -16,7 +16,7 @@ Rule execution order (later rules see the updated bucket):
 """
 from __future__ import annotations
 
-from kpm_builder.schema import ConfidenceBucket, SourceTier
+from kpm_builder.schema import ConfidenceBucket, GroundVerdict, SourceTier
 
 # ---------------------------------------------------------------------------
 # Ordering helpers (exposed so tests can assert the contract)
@@ -94,14 +94,14 @@ def confidence(
         SUPPORTED | PARTIAL | UNVERIFIED
     """
     # --- Rule 1: ground gate ---
-    if ground_verdict == "reject":
+    if ground_verdict == GroundVerdict.REJECT.value:
         return U
 
     # --- Rule 2: tier cap ---
     bucket: ConfidenceBucket = TIER_CAP[tier]
 
     # --- Rule 3: over_claims cap ---
-    if ground_verdict == "over_claims":
+    if ground_verdict == GroundVerdict.OVER_CLAIMS.value:
         bucket = _min_bucket(bucket, P)
 
     # --- Rule 4: corroboration threshold ---

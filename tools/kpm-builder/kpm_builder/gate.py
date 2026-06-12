@@ -11,7 +11,11 @@ callable so tests can inject a fake without hitting any LLM.
 """
 from __future__ import annotations
 
-from package_research.llm_core import UNTRUSTED_PREAMBLE, delimit_untrusted
+from package_research.llm_core import (
+    UNTRUSTED_PREAMBLE,
+    coerce_result_dict,
+    delimit_untrusted,
+)
 
 from dataclasses import dataclass
 from typing import Callable
@@ -171,8 +175,11 @@ def is_relevant(
     """
     Ask the injected LLM judge whether `source` is relevant to `contract`.
 
-    Returns True iff the judge returns {"relevant": True, ...}.
-    Defensively defaults to False if the key is missing.
+    Returns True iff the judge returns {"relevant": True, ...}.  Malformed
+    judge output (non-dict, or missing the "relevant" key) is warned + counted
+    via the seam's malformed accounting before defaulting to not-relevant —
+    so "judge said no" stays distinguishable from "no parseable answer"
+    (REVIEW.md M3).
     """
     prompt = _RELEVANCE_PROMPT_TEMPLATE.format(
         goal=contract.goal,
@@ -182,7 +189,9 @@ def is_relevant(
         untrusted_preamble=UNTRUSTED_PREAMBLE,
         text_snippet=delimit_untrusted(source.text[:2000], label=source.url),
     )
-    result = complete_json(prompt, RELEVANCE_SCHEMA)
+    result = coerce_result_dict(
+        complete_json(prompt, RELEVANCE_SCHEMA), stage="gate", required_key="relevant"
+    )
     return bool(result.get("relevant", False))
 
 

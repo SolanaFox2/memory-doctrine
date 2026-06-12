@@ -244,3 +244,32 @@ def test_relate_kpm_isolates_per_edge_verify_failures(tmp_path, capsys):
     assert len(result.relations) == 1          # surviving edge kept
     assert result.skipped == 1                 # failure surfaced, not silent
     assert "skipping edge" in capsys.readouterr().err
+
+
+def test_apply_relations_drops_dangling_endpoints(tmp_path, capsys):
+    """REVIEW.md M6 — a relation whose endpoint isn't in the KPM is warned and
+    dropped before planning; one bad hand-built to_id must not abort the whole
+    apply via the lint rollback."""
+    contract = {"goal": "G", "in_scope": "I", "out_of_scope": "O"}
+    beats = [
+        {"question": "Q1", "claims": [
+            _claim("Alpha is a fundamental property of system X.", "https://ex.com/1"),
+            _claim("Gamma constrains Alpha within system X.", "https://ex.com/2")]},
+    ]
+    build_from_research(contract, beats, out_dir=tmp_path,
+                        run_date="2026-06-04", fetched_at="2026-06-04T00:00:00Z")
+    ids = [a.id for a in read_axioms(tmp_path)]
+
+    apply_relations(tmp_path, RelateResult(relations=[
+        Relation(ids[0], ids[1], RelationType.SUPPORTS, verified=True),
+        Relation(ids[0], "no-such-axiom", RelationType.SUPPORTS, verified=True),
+        Relation("ghost-axiom", ids[1], RelationType.SUPPORTS, verified=True),
+    ]))
+
+    text = _file_for(tmp_path, ids[0]).read_text(encoding="utf-8")
+    assert f"supports: [{ids[1]}]" in text     # the good edge was applied
+    assert "no-such-axiom" not in text         # the dangling edge was not
+    err = capsys.readouterr().err
+    assert "dangling" in err and "no-such-axiom" in err and "ghost-axiom" in err
+    assert "dropped 2 dangling relation(s)" in err
+    assert validate(str(tmp_path)).lint_ok     # no rollback needed

@@ -506,3 +506,118 @@ class TestJsonRoundTrip:
             fetched_at=FETCHED_AT,
         )
         assert isinstance(outcome, BuildOutcome)
+
+
+# ---------------------------------------------------------------------------
+# REVIEW.md M1 / T3 — over_claims claims must not inflate quality sources
+# ---------------------------------------------------------------------------
+
+
+class TestOverClaimsCountingPinned:
+    """One entails + one over_claims must NOT report ANSWERED with two quality
+    sources — a dropped claim is neither a quality source nor a bucket driver."""
+
+    def _beat(self):
+        return {
+            "question": "Does the evidence support a single mechanism?",
+            "claims": [
+                {
+                    "statement": "Sleep spindles during NREM support memory transfer.",
+                    "source": {
+                        "url": "https://arxiv.org/abs/2001.10001",
+                        "text": "Sleep spindles during NREM support memory transfer.",
+                        "venue": "arxiv.org",
+                    },
+                    "ground_verdict": "entails",
+                    "n_corroborations": 1,
+                    "survived_refuter": True,
+                    "generativity": 3,
+                },
+                {
+                    "statement": "Spindles universally guarantee perfect recall in everyone.",
+                    "source": {
+                        "url": "https://medium.com/sleep/overreach",
+                        "text": "A small pilot hinted at a modest spindle effect.",
+                        "venue": "medium.com",
+                    },
+                    "ground_verdict": "over_claims",
+                    "n_corroborations": 1,
+                    "survived_refuter": False,
+                    "generativity": 2,
+                },
+            ],
+        }
+
+    def test_one_entails_plus_over_claims_does_not_answer(self, tmp_path):
+        outcome = build_from_research(
+            CONTRACT_KPM, [self._beat()],
+            out_dir=tmp_path / "oc", run_date=RUN_DATE, fetched_at=FETCHED_AT,
+        )
+        row = outcome.report.rows[0]
+        # Only ONE entailed claim → 1 quality source < 2 → ABSTAINED, not ANSWERED.
+        assert row.state == CoverageState.ABSTAINED, (
+            f"over_claims claim inflated the quality-source count (M1); got {row.state}."
+        )
+
+    def test_over_claims_not_shipped_and_bucket_from_entails_only(self, tmp_path):
+        out_dir = tmp_path / "oc2"
+        build_from_research(
+            CONTRACT_KPM, [self._beat()],
+            out_dir=out_dir, run_date=RUN_DATE, fetched_at=FETCHED_AT,
+        )
+        # The beat abstains → no KPM, a research log instead; the over_claims
+        # statement must never appear as a shipped axiom.
+        axioms_dir = out_dir / "axioms"
+        if axioms_dir.exists():
+            for f in axioms_dir.glob("*.md"):
+                assert "universally guarantee" not in f.read_text()
+
+
+# ---------------------------------------------------------------------------
+# REVIEW.md M2 — malformed input fails up front with a named error
+# ---------------------------------------------------------------------------
+
+
+class TestMalformedInputValidation:
+    def test_beat_missing_question_raises_named_error(self, tmp_path):
+        from kpm_builder.cli import ResearchInputError
+
+        bad = [{"claims": []}]   # no "question"
+        with pytest.raises(ResearchInputError, match=r"beats\[0\]"):
+            build_from_research(CONTRACT_KPM, bad, out_dir=tmp_path / "b",
+                                run_date=RUN_DATE, fetched_at=FETCHED_AT)
+
+    def test_claim_missing_source_raises_named_error(self, tmp_path):
+        from kpm_builder.cli import ResearchInputError
+
+        bad = [{"question": "Q", "claims": [
+            {"statement": "S", "ground_verdict": "entails"}]}]   # no "source"
+        with pytest.raises(ResearchInputError, match=r"beats\[0\]"):
+            build_from_research(CONTRACT_KPM, bad, out_dir=tmp_path / "b2",
+                                run_date=RUN_DATE, fetched_at=FETCHED_AT)
+
+    def test_bad_ground_verdict_raises(self, tmp_path):
+        from kpm_builder.cli import ResearchInputError
+
+        bad = [{"question": "Q", "claims": [
+            {"statement": "S", "ground_verdict": "maybe",
+             "source": {"url": "u", "text": "t"}}]}]
+        with pytest.raises(ResearchInputError):
+            build_from_research(CONTRACT_KPM, bad, out_dir=tmp_path / "b3",
+                                run_date=RUN_DATE, fetched_at=FETCHED_AT)
+
+    def test_contract_not_dict_raises(self, tmp_path):
+        from kpm_builder.cli import ResearchInputError
+
+        with pytest.raises(ResearchInputError, match="contract"):
+            build_from_research("not-a-dict", [], out_dir=tmp_path / "b4",
+                                run_date=RUN_DATE, fetched_at=FETCHED_AT)
+
+    def test_nothing_written_when_input_invalid(self, tmp_path):
+        from kpm_builder.cli import ResearchInputError
+
+        out_dir = tmp_path / "untouched"
+        with pytest.raises(ResearchInputError):
+            build_from_research(CONTRACT_KPM, [{"claims": []}], out_dir=out_dir,
+                                run_date=RUN_DATE, fetched_at=FETCHED_AT)
+        assert not out_dir.exists()   # failed before any mkdir/write

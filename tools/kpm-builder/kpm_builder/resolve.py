@@ -259,12 +259,42 @@ def _resolve_prompt(
     )
 
 
-def _default_ground(claim: str, passage: str, *, complete_json) -> str:
-    """Ground a claim against a passage via the engine's grounder (independent check)."""
+def _ground_provenance(
+    evidence_ids: tuple[str, ...], evidence_meta: dict[str, dict]
+) -> tuple[str, str]:
+    """Provenance ``(url, fetched_at)`` for grounding a resolution truth.
+
+    Threads the cited evidence note's real ref/url and verified date into the
+    grounding snapshot (REVIEW.md M5) — the first cited note with a url wins.
+    When no note carries one, the ref is derived from the evidence id(s) and
+    the date is marked ``"unknown"``: honest provenance, never a fixed fake.
+    """
+    for eid in evidence_ids:
+        meta = evidence_meta.get(eid) or {}
+        url = str(meta.get("url") or meta.get("ref") or "").strip()
+        if url:
+            verified = meta.get("verified")
+            return url, (str(verified) if verified else "unknown")
+    joined = "+".join(evidence_ids) if evidence_ids else "unknown"
+    return f"evidence://{joined}", "unknown"
+
+
+def _default_ground(
+    claim: str,
+    passage: str,
+    evidence_ids: tuple[str, ...],
+    *,
+    evidence_meta: dict[str, dict],
+    complete_json,
+) -> str:
+    """Ground a claim against a passage via the engine's grounder (independent check).
+
+    The snapshot carries the cited evidence's real provenance via
+    ``_ground_provenance`` — not a fabricated ``internal://`` constant."""
     from kpm_builder.ground import ground
     from kpm_builder.snapshot import snapshot
-    snap = snapshot("internal://passage", fetcher=lambda u: passage,
-                    fetched_at="2026-01-01T00:00:00Z")
+    url, fetched_at = _ground_provenance(evidence_ids, evidence_meta)
+    snap = snapshot(url, fetcher=lambda u: passage, fetched_at=fetched_at)
     return ground(claim, snap, complete_json=complete_json).verdict
 
 
@@ -276,6 +306,7 @@ def resolve(
     *,
     complete_json,
     ground_fn=None,
+    evidence_meta: dict[str, dict] | None = None,
 ) -> Resolution:
     """Resolve one contradiction candidate to a grounded verdict.
 
@@ -283,10 +314,17 @@ def resolve(
     A ``reconciled`` truth must be *entailed* by a cited passage (re-checked via the
     grounder) or it downgrades to ``dispute``; an ``error`` is only kept if the accused
     axiom over-claims its OWN source. Malformed output → ``dispute`` (fail safe).
+
+    ``ground_fn(claim, passage, evidence_ids)`` — the cited ids let the default
+    grounder carry real evidence provenance (REVIEW.md M5); ``evidence_meta``
+    (evidence id → frontmatter dict) feeds it the notes' url/verified fields.
     """
     if ground_fn is None:
-        def ground_fn(claim: str, passage: str) -> str:
-            return _default_ground(claim, passage, complete_json=complete_json)
+        _meta = evidence_meta or {}
+
+        def ground_fn(claim: str, passage: str, evidence_ids: tuple[str, ...]) -> str:
+            return _default_ground(claim, passage, evidence_ids,
+                                   evidence_meta=_meta, complete_json=complete_json)
 
     a, b = cand.a_id, cand.b_id
     raw = complete_json(
@@ -307,7 +345,8 @@ def resolve(
         truth = str(raw.get("truth", ""))
         tp = raw.get("truth_passage_id")
         # The truth is a new claim — it must be entailed by its cited passage.
-        if truth and tp in evidence_passages and ground_fn(truth, evidence_passages[tp]) == "entails":
+        if (truth and tp in evidence_passages
+                and ground_fn(truth, evidence_passages[tp], (tp,)) == "entails"):
             if tp not in basis:
                 basis = [tp, *basis]
             # Single grounded source → PARTIAL: the doctrine caps single-source confidence
@@ -326,7 +365,7 @@ def resolve(
             own_passage = "\n".join(evidence_passages.get(e, "") for e in axiom_evidence[ea])
             # Only an axiom that over-claims its OWN source is a real error; a faithfully
             # grounded minority position is a dispute, never marked wrong.
-            if ground_fn(statements.get(ea, ""), own_passage) != "entails":
+            if ground_fn(statements.get(ea, ""), own_passage, tuple(axiom_evidence[ea])) != "entails":
                 return Resolution(a, b, Verdict.ERROR, explanation=explanation, basis=basis,
                                   confidence=ConfidenceBucket.UNVERIFIED, dissent=dissent)
         return Resolution(a, b, Verdict.DISPUTE, explanation=explanation, basis=basis,
@@ -373,6 +412,12 @@ def resolve_kpm(kpm_dir: str | Path, *, complete_json, resolved: str) -> list[Re
     statements = {a.id: a.statement for a in axioms}
     axiom_evidence = {a.id: a.evidence_ids for a in axioms}
     evidence_passages = read_evidence(kpm_dir)
+    # Evidence frontmatter (url/ref + verified) → real grounding provenance (M5).
+    evdir = Path(kpm_dir) / "evidence"
+    evidence_meta = (
+        {str(fm["id"]): fm for fm in read_frontmatters(evdir) if fm.get("id")}
+        if evdir.is_dir() else {}
+    )
 
     # Per-contradiction isolation: one failed resolution must not abort the
     # stage and discard prior resolutions (each costs 2-3 grounded LLM calls).
@@ -381,7 +426,7 @@ def resolve_kpm(kpm_dir: str | Path, *, complete_json, resolved: str) -> list[Re
     for cand in detect_contradictions(kpm_dir):
         try:
             res = resolve(cand, statements, evidence_passages, axiom_evidence,
-                          complete_json=complete_json)
+                          complete_json=complete_json, evidence_meta=evidence_meta)
             record_resolution(kpm_dir, res, resolved=resolved)
         except Exception as exc:  # noqa: BLE001 - isolate per contradiction
             skipped += 1
@@ -417,8 +462,12 @@ def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
     from kpm_builder.providers import Family, make_provider
 
-    cj = make_provider(Family(args.family))
-    res = resolve_kpm(args.kpm, complete_json=cj, resolved=args.resolved)
+    try:
+        cj = make_provider(Family(args.family))
+        res = resolve_kpm(args.kpm, complete_json=cj, resolved=args.resolved)
+    except Exception as exc:  # noqa: BLE001 - CLI surface: one clean line, no traceback (REVIEW.md L2)
+        print(f"error: resolve: {exc}", file=sys.stderr)
+        sys.exit(1)
     counts = collections.Counter(r.status.value for r in res)
     print(f"resolved {len(res)} contradiction(s) in {args.kpm}: {dict(counts)}")
 

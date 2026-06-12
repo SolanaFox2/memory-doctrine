@@ -334,3 +334,16 @@ def test_relate_kpm_end_to_end(tmp_path):
     assert (r.from_id, r.to_id, r.type, r.verified) == (
         "a1", "a2", RelationType.SUPPORTS, True,
     )
+
+
+def test_main_prints_clean_error_and_exits(monkeypatch, capsys):
+    """REVIEW.md L2 — a failing run exits 1 with one clean line, no traceback."""
+    from kpm_builder.relate import main
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(SystemExit) as ei:
+        main(["--kpm", "nowhere"])
+    assert ei.value.code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: relate:") and "ANTHROPIC_API_KEY" in err
+    assert "Traceback" not in err
