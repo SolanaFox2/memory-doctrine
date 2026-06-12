@@ -34,9 +34,9 @@ done by the Python engine** (`kpm_builder`). You connect them.
 
 ## Setup
 
-The engine runs from the workspace with:
+The engine installs from the workspace with:
 ```
-export PYTHONPATH=tools/kpm-builder:tools/package-research/src
+pip install -e tools/package-research && pip install -e tools/kpm-builder
 ```
 Optional, for cross-family grounding: `pip install anthropic` (the SDK), then `export DEEPSEEK_API_KEY=…` (or `GOOGLE_GENAI_API_KEY`).
 Without a key, you ground with Claude subagents (the subscription path) — fully supported.

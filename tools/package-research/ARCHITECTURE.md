@@ -94,8 +94,8 @@ type: axiom
 title: "The bottleneck is the memory design, not model scale"
 generativity: 5
 confidence: 0.7
-status: candidate
-relations: { derives-from: [], supports: [], generalizes: [], contradicts: [], applies-to-kpm: [] }
+status: locked        # challenge survivors promote: locked >= 0.7, else provisional
+relations: { derives-from: [], supports: [decay-is-a-feature], generalizes: [], contradicts: [], applies-to-kpm: [] }
 evidence: [decay-benchmarks]          # → into the store
 provenance: "package-research/distilled"
 ```
