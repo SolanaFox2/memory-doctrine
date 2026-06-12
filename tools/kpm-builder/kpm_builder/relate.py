@@ -70,6 +70,10 @@ class RelateResult:
     relations: list[Relation]        # verified == True only
     capped: int = 0                  # # candidate edges dropped by the budget cap
     skipped: int = 0                 # # candidates skipped on per-edge verify failure
+    #: Verified contradicts pairs between two LOCKED axioms: F2 forbids the
+    #: edge on disk, but the truth-seeking signal is preserved as contradiction
+    #: candidates for resolve (issue #19, option 2). Sorted (a, b) pairs.
+    f2_candidates: list[tuple[str, str]] = field(default_factory=list)
 
 
 # ── parsing (no LLM) ──────────────────────────────────────────────────────────
@@ -331,13 +335,20 @@ def _build_passages(
 
 def apply_guards(
     candidates: list[Relation], axioms_by_id: dict[str, AxiomView]
-) -> list[Relation]:
+) -> tuple[list[Relation], list[Relation]]:
     """Mechanical guards (no LLM): drop self-edges, dangling endpoints, duplicate
     ``(from, to, type)`` edges, and — F2 invariant — any ``contradicts`` edge
-    between two ``locked`` axioms.  Order-preserving."""
+    between two ``locked`` axioms.  Order-preserving.
+
+    Returns ``(kept, f2_dropped)``: the F2-dropped contradicts proposals are
+    returned separately so the caller can verify them and hand survivors to
+    resolve as contradiction candidates instead of losing the signal
+    (issue #19, option 2).
+    """
     valid = set(axioms_by_id)
     seen: set[tuple[str, str, RelationType]] = set()
     kept: list[Relation] = []
+    f2_dropped: list[Relation] = []
     for c in candidates:
         if c.from_id == c.to_id:
             continue
@@ -346,14 +357,15 @@ def apply_guards(
         key = (c.from_id, c.to_id, c.type)
         if key in seen:
             continue
+        seen.add(key)
         if c.type is RelationType.CONTRADICTS and (
             axioms_by_id[c.from_id].status == "locked"
             and axioms_by_id[c.to_id].status == "locked"
         ):
-            continue  # F2: contradicts edge between two locked axioms
-        seen.add(key)
+            f2_dropped.append(c)  # F2: cannot ship; may still become a candidate
+            continue
         kept.append(c)
-    return kept
+    return kept, f2_dropped
 
 
 def relate_kpm(
@@ -379,7 +391,7 @@ def relate_kpm(
         max_out_degree=max_out_degree,
         global_cap=global_cap,
     )
-    guarded = apply_guards(candidates, axioms_by_id)
+    guarded, f2_dropped = apply_guards(candidates, axioms_by_id)
 
     # Per-edge isolation: one failed verification must not abort the stage and
     # discard every previously verified edge (a build may have spent serious
@@ -400,9 +412,29 @@ def relate_kpm(
             continue
         if r.verified:
             verified.append(r)
+    # F2-guarded contradicts proposals are verified at the SAME bar as a
+    # shipped edge; survivors become contradiction candidates for resolve
+    # rather than F2-violating edges (issue #19, option 2).
+    f2_candidates: list[tuple[str, str]] = []
+    for c in f2_dropped:
+        try:
+            r = verify_relation(c, axioms_by_id, passages, complete_json=complete_json)
+        except Exception as exc:  # noqa: BLE001 - isolate per edge, keep the rest
+            skipped += 1
+            print(
+                f"warning: relate: verify failed for F2 candidate {c.from_id} <-> "
+                f"{c.to_id}, skipping: {exc}",
+                file=sys.stderr,
+            )
+            continue
+        if r.verified:
+            pair = tuple(sorted((c.from_id, c.to_id)))
+            if pair not in f2_candidates:
+                f2_candidates.append(pair)
     if skipped:
         print(f"warning: relate: skipped {skipped} edge(s) on verify failure", file=sys.stderr)
-    return RelateResult(relations=verified, capped=capped, skipped=skipped)
+    return RelateResult(relations=verified, capped=capped, skipped=skipped,
+                        f2_candidates=f2_candidates)
 
 
 # ── CLI (API path) ────────────────────────────────────────────────────────────

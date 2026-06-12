@@ -302,13 +302,15 @@ def test_apply_guards_drops_self_dup_unknown_and_f2():
         Relation("a2", "a3", RelationType.CONTRADICTS, False),    # locked+locked → F2 drop
         Relation("a1", "a2", RelationType.CONTRADICTS, False),    # candidate+locked → keep
     ]
-    out = apply_guards(cands, axby)
+    out, f2_dropped = apply_guards(cands, axby)
     keys = {(r.from_id, r.to_id, r.type) for r in out}
     assert keys == {
         ("a1", "a2", RelationType.SUPPORTS),
         ("a1", "a2", RelationType.CONTRADICTS),
     }
     assert len(out) == 2
+    # The F2-dropped pair is surfaced for candidate verification (issue #19).
+    assert [(r.from_id, r.to_id) for r in f2_dropped] == [("a2", "a3")]
 
 
 def test_relate_kpm_end_to_end(tmp_path):
