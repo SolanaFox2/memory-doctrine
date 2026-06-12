@@ -65,7 +65,7 @@ DEFAULT_TIMEOUT = 120.0
 # ── model defaults ──────────────────────────────────────────────────────────────
 
 _DEFAULT_MODEL: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-5",
+    "anthropic": "claude-sonnet-4-6",
     "deepseek": "deepseek-chat",
     "google": "gemini-2.0-flash",
 }

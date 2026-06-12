@@ -35,6 +35,8 @@ jobs:
           pip install -e 'tools/kpm-builder[dev]'
       - name: Doctrine lint (the standard validates itself)
         run: python scripts/doctrine_lint.py .
+      - name: Vendored linter is byte-identical to canonical (INF-2 drift check)
+        run: cmp scripts/doctrine_lint.py tools/package-research/src/package_research/vendor/doctrine_lint.py
       - name: Doctrine lint tests
         run: pytest scripts/tests -q
       - name: package-research tests

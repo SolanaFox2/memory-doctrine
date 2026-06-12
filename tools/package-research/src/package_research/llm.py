@@ -69,7 +69,7 @@ class LLMClient:
         self,
         *,
         api_key: Optional[str] = None,
-        model: str = "claude-sonnet-4-5",
+        model: str = "claude-sonnet-4-6",
         client: Any = None,
         max_retries: int = 3,
         max_tokens: int = 4096,

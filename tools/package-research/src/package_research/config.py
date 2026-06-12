@@ -29,7 +29,7 @@ class Config(BaseModel):
         description="Where the produced KPM package will be written.",
     )
     model: str = Field(
-        default="claude-sonnet-4-5",
+        default="claude-sonnet-4-6",
         description="Anthropic model used for the LLM-backed stages.",
     )
     max_sources: int = Field(
