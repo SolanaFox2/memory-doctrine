@@ -15,6 +15,7 @@ NOT via a full YAML round-trip — that preserves byte-stability.
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -171,6 +172,33 @@ def apply_relations(kpm_dir: str | Path, result: RelateResult) -> None:
         raise RuntimeError(
             f"apply_relations would break lint on {kpm_dir}; rolled back: {report}"
         )
+
+    _persist_f2_candidates(kpm_dir, result.f2_candidates)
+
+
+def _persist_f2_candidates(kpm_dir: Path, pairs: list) -> None:
+    """Record verified-but-unshippable contradicts pairs for resolve.
+
+    F2 forbids a ``contradicts`` edge between two locked axioms, but the
+    verified disagreement is exactly what resolve exists to settle — so the
+    pairs land in ``graph/contradiction_candidates.json`` (merged + deduped,
+    invisible to the lint), where ``detect_contradictions`` reads them as its
+    third source (issue #19, option 2).
+    """
+    if not pairs:
+        return
+    path = Path(kpm_dir) / "graph" / "contradiction_candidates.json"
+    existing: list = []
+    if path.is_file():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing = []   # unreadable file: rebuild from what we know now
+    merged = sorted(
+        {tuple(sorted((str(a), str(b)))) for a, b in [*existing, *pairs]}
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, json.dumps([list(pair) for pair in merged], indent=0) + "\n")
 
 
 def relate_and_apply(

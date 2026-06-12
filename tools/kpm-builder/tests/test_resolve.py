@@ -347,3 +347,88 @@ def test_resolve_kpm_isolates_per_contradiction_failures(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "skipping (contradiction stays open)" in err
     assert "skipped 1 contradiction" in err
+
+
+# ── F2-guarded contradiction candidates (issue #19, option 2) ──────────────────
+
+
+def test_f2_candidates_flow_relate_to_resolve(tmp_path):
+    """Locked-vs-locked contradicts proposals: the edge never ships (F2), but
+    the verified pair is persisted and detect_contradictions picks it up."""
+    import json as _json
+    import re as _re
+
+    from kpm_builder.cli import build_from_research
+    from kpm_builder.relate import relate_kpm
+    from package_research.validate import validate
+
+    def claim(stmt, url):
+        return {"statement": stmt, "source": {"url": url, "text": stmt, "venue": "arxiv"},
+                "ground_verdict": "entails", "n_corroborations": 2, "generativity": 3}
+
+    kpm = tmp_path / "kpm"
+    build_from_research(
+        {"goal": "G", "in_scope": "I", "out_of_scope": "O"},
+        [{"question": "Q1", "claims": [
+            claim("System X always converges quickly.", "https://arxiv.org/abs/1"),
+            claim("System X never converges at all.", "https://arxiv.org/abs/2")]}],
+        out_dir=kpm, run_date="2026-06-12", fetched_at="2026-06-12T00:00:00Z",
+    )
+    statuses = {_re.search(r"(?m)^status: (\S+)", f.read_text()).group(1)
+                for f in (kpm / "axioms").glob("*.md")}
+    assert statuses == {"locked"}                       # precondition: F2 applies
+
+    def fake(prompt, schema):
+        if "AXIOMS:" in prompt and "PROPOSED RELATION" not in prompt:
+            aids = _re.findall(r"(?m)^- (\S+):", prompt)
+            return {"relations": [{"from_id": aids[0], "to_id": aids[1],
+                                   "type": "contradicts", "rationale": "r"}]}
+        return {"holds": True, "reason": "x"}           # verifier confirms
+
+    result = relate_kpm(kpm, complete_json=fake)
+    assert result.relations == []                       # F2: edge never ships
+    assert len(result.f2_candidates) == 1               # signal preserved
+
+    apply_relations(kpm, result)
+    cand_file = kpm / "graph" / "contradiction_candidates.json"
+    assert cand_file.is_file()
+    assert _json.loads(cand_file.read_text()) == [sorted(result.f2_candidates[0])]
+    assert validate(str(kpm)).lint_ok                   # JSON invisible to lint
+
+    cands = detect_contradictions(kpm)
+    assert any(c.source == "relate-f2" for c in cands)
+
+    # Re-apply merges + dedups instead of duplicating.
+    apply_relations(kpm, result)
+    assert len(_json.loads(cand_file.read_text())) == 1
+
+
+def test_f2_candidate_requires_verification(tmp_path):
+    """A refuted locked-vs-locked proposal is NOT recorded as a candidate."""
+    import re as _re
+
+    from kpm_builder.cli import build_from_research
+    from kpm_builder.relate import relate_kpm
+
+    def claim(stmt, url):
+        return {"statement": stmt, "source": {"url": url, "text": stmt, "venue": "arxiv"},
+                "ground_verdict": "entails", "n_corroborations": 2, "generativity": 3}
+
+    kpm = tmp_path / "kpm"
+    build_from_research(
+        {"goal": "G", "in_scope": "I", "out_of_scope": "O"},
+        [{"question": "Q1", "claims": [
+            claim("Alpha holds in system X.", "https://arxiv.org/abs/1"),
+            claim("Beta holds in system X.", "https://arxiv.org/abs/2")]}],
+        out_dir=kpm, run_date="2026-06-12", fetched_at="2026-06-12T00:00:00Z",
+    )
+
+    def fake(prompt, schema):
+        if "AXIOMS:" in prompt and "PROPOSED RELATION" not in prompt:
+            aids = _re.findall(r"(?m)^- (\S+):", prompt)
+            return {"relations": [{"from_id": aids[0], "to_id": aids[1],
+                                   "type": "contradicts", "rationale": "r"}]}
+        return {"holds": False, "reason": "merely topical"}
+
+    result = relate_kpm(kpm, complete_json=fake)
+    assert result.f2_candidates == []

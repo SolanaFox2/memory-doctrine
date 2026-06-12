@@ -12,6 +12,7 @@ not ~75.
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -157,8 +158,9 @@ def _numberish(term: str) -> bool:
 def detect_contradictions(
     kpm_dir: str | Path, *, idf_floor: float = 0.5, max_candidates: int = 50
 ) -> list[Contradiction]:
-    """Mechanical contradiction candidates from two sources: Relate's verified
-    ``contradicts`` edges, and value-disagreements (same-unit, differing,
+    """Mechanical contradiction candidates from three sources: Relate's verified
+    ``contradicts`` edges, the F2-guarded candidates Relate recorded in
+    ``graph/contradiction_candidates.json`` (issue #19), and value-disagreements (same-unit, differing,
     non-complementary numbers gated by a shared *non-numeric, non-unit* concept
     above an IDF floor). High precision by design — the resolver is the final gate."""
     fms = _axiom_fms(kpm_dir)
@@ -188,6 +190,25 @@ def detect_contradictions(
                 if key not in seen:
                     seen.add(key)
                     cands.append(Contradiction(key[0], key[1], source="relate"))
+
+    # Source 3: F2-guarded candidates recorded by relate (issue #19, option 2)
+    # — independently VERIFIED contradicts pairs between locked axioms that
+    # could not ship as edges without violating F2.
+    cand_file = Path(kpm_dir) / "graph" / "contradiction_candidates.json"
+    if cand_file.is_file():
+        try:
+            rows = json.loads(cand_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            rows = []
+        for row in rows:
+            if not (isinstance(row, list) and len(row) == 2):
+                continue
+            a, b = str(row[0]), str(row[1])
+            if a in valid and b in valid:
+                key = tuple(sorted((a, b)))
+                if key not in seen:
+                    seen.add(key)
+                    cands.append(Contradiction(key[0], key[1], source="relate-f2"))
 
     n = len(fms)
     for i in range(n):
