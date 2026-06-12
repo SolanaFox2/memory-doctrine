@@ -16,13 +16,15 @@ NOT via a full YAML round-trip — that preserves byte-stability.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import Iterable
 
-from kpm_builder._util import atomic_write
+from kpm_builder._util import atomic_write, split_frontmatter
 from kpm_builder.relate import (
     CompleteJSON,
     RelateResult,
+    Relation,
     RelationType,
     parse_axiom_md,
     relate_kpm,
@@ -33,9 +35,6 @@ from package_research.validate import validate
 
 #: Matches a wikilink target (same shape as doctrine_lint's WIKILINK).
 _WIKILINK = re.compile(r"\[\[([^\]|#]+)")
-
-#: Line-anchored frontmatter delimiter (same shape as the public linter's _parse).
-_FM_SPLIT = re.compile(r"(?m)^---[ \t]*$")
 
 
 def _merge_relation_line(text: str, type_value: str, new_ids: Iterable[str]) -> str:
@@ -77,7 +76,7 @@ def rewrite_axiom_md(
 
     # Edit relation lines ONLY inside the frontmatter block — never a body line
     # that happens to look like ``  supports: [...]`` (e.g. in an example/code block).
-    parts = _FM_SPLIT.split(text, maxsplit=2)
+    parts = split_frontmatter(text)
     if len(parts) >= 3:
         fm = parts[1]
         for rtype, ids in by_type.items():
@@ -102,7 +101,9 @@ def apply_relations(kpm_dir: str | Path, result: RelateResult) -> None:
     Plans every affected axiom note (frontmatter + wikilinks), writes them
     atomically, then asserts ``validate(kpm_dir).lint_ok``.  If lint fails it
     **rolls every file back** to its original bytes and raises — so the KPM is
-    never left broken or half-applied.  Only ``verified`` relations are written.
+    never left broken or half-applied.  Only ``verified`` relations are
+    written; relations with a dangling endpoint are warned + dropped up front
+    (REVIEW.md M6) rather than poisoning the whole apply.
     """
     kpm_dir = Path(kpm_dir)
     axdir = kpm_dir / "axioms"
@@ -116,6 +117,27 @@ def apply_relations(kpm_dir: str | Path, result: RelateResult) -> None:
         av = parse_axiom_md(f.read_text(encoding="utf-8"))
         if av.id:
             id_to_file[av.id] = f
+
+    # Drop dangling-endpoint relations BEFORE planning (REVIEW.md M6) —
+    # mirroring apply_guards: one bad hand-built to_id must not abort the
+    # whole apply via the lint rollback (which stays as the last-resort net).
+    kept: list[Relation] = []
+    for r in relations:
+        if r.from_id in id_to_file and r.to_id in id_to_file:
+            kept.append(r)
+        else:
+            print(
+                f"warning: apply_relations: dropping {r.from_id} "
+                f"-{r.type.value}-> {r.to_id}: dangling endpoint not in this KPM",
+                file=sys.stderr,
+            )
+    if len(kept) != len(relations):
+        print(
+            f"warning: apply_relations: dropped {len(relations) - len(kept)} "
+            "dangling relation(s)",
+            file=sys.stderr,
+        )
+    relations = kept
 
     outgoing: dict[str, list[tuple[RelationType, str]]] = {}
     incoming_contradicts: dict[str, set[str]] = {}

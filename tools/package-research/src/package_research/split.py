@@ -62,10 +62,25 @@ def _evidence_slug(source: str) -> str:
     return _slugify(rel, max_words=12)
 
 
+# Abbreviations whose dots must not end a title (REVIEW.md L4): a statement
+# like "e.g. Caching ..." must not truncate its title to "e".
+_TITLE_ABBREV = re.compile(r"\b(?:e\.g\.|i\.e\.|etc\.|vs\.)", re.IGNORECASE)
+_TITLE_BREAK = re.compile(r"[.;:]")
+
+
 def _title_from_statement(statement: str) -> str:
-    """A short human title: the statement's first clause, trimmed."""
-    head = re.split(r"[.;:]", statement.strip(), maxsplit=1)[0].strip()
-    return head or statement.strip()
+    """A short human title: the statement's first clause, trimmed.
+
+    The clause ends at the first ``.``/``;``/``:`` that is not part of a common
+    abbreviation (e.g., i.e., etc., vs.).
+    """
+    s = statement.strip()
+    masked = s
+    for m in _TITLE_ABBREV.finditer(s):
+        masked = masked[: m.start()] + "x" * (m.end() - m.start()) + masked[m.end() :]
+    brk = _TITLE_BREAK.search(masked)
+    head = s[: brk.start()].strip() if brk else s
+    return head or s
 
 
 @dataclass

@@ -82,5 +82,19 @@ def test_idf_is_quantized_4dp():
     # ln(8/2) = ln 4 = 1.38629... → 1.3863
     assert idf(2, 8) == 1.3863
     assert str(idf(2, 8)) == "1.3863"     # byte-stable string form
-    # ln(4/4) = 0 (generic concept in every axiom)
-    assert idf(4, 4) == 0.0
+    # ln(4/4) = 0 → floored at one quantum so a generic concept in every axiom
+    # keeps a minimal nonzero weight, never silently vanishing (REVIEW.md L6)
+    assert idf(4, 4) == 0.0001
+
+
+def test_universal_concept_keeps_nonzero_idf():
+    """REVIEW.md L6 — a concept appearing in EVERY axiom stays in the derived
+    adjacency with a minimal weight instead of being zeroed out."""
+    statements = [
+        "raft elects a single leader",
+        "raft replicates a log of entries",
+        "raft commits entries via the leader",
+    ]
+    _, info = extract_concepts(statements)
+    assert info["raft"]["df"] == 3            # universal: df == N
+    assert info["raft"]["idf"] > 0.0          # floored, never dropped to 0

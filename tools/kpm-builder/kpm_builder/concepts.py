@@ -16,6 +16,10 @@ from decimal import ROUND_HALF_UP, Decimal
 
 MIN_DF = 2
 _IDF_DP = Decimal("0.0001")
+#: Floor = one quantum at 4 dp, so a concept in EVERY axiom keeps a minimal
+#: nonzero weight instead of silently vanishing from the derived adjacency
+#: (REVIEW.md L6 — generics are suppressed by low IDF, never hard-deleted).
+IDF_FLOOR = float(_IDF_DP)
 
 # Domain-agnostic English stoplist (inline, frozen — no NLTK/sklearn dependency).
 STOPWORDS: frozenset[str] = frozenset("""
@@ -23,8 +27,8 @@ a an the and or but nor not of to in on at by for with from into onto over under
 as is are was were be been being am this that these those it itself its their there
 here he she they we you your our my me him us them his her then than thus so such
 do does did doing have has had having will would shall should can could may might must
-one two each every all any some no any if while until because about above below up
-down out off again further once more most other own same too very per via while
+one two each every all any some no if while until because about above below up
+down out off again further once more most other own same too very per via
 between within without across upper lower toward towards only also just both either
 neither when where which who whom whose why how what whether against during before
 after how's it's that's
@@ -60,8 +64,9 @@ def singularize(tok: str, vocab: set[str]) -> str:
     """Fold ``Xs``/``Xes`` → ``X`` ONLY when ``X`` already occurs in the corpus
     vocabulary — so ``validators``→``validator`` but never ``bias``→``bia``.
 
-    Tries the shorter strip (``s``) before ``es`` so ``caches``→``cache`` (not
-    ``cach``) when both bases could exist; the most conservative real base wins."""
+    Tries the ``s`` strip before ``es``; the first base attested in the corpus
+    vocabulary wins (``caches``→``cache`` when ``cache`` occurs in the corpus,
+    falling back to ``cach`` only if that is the sole attested base)."""
     for suf in ("s", "es"):
         if tok.endswith(suf):
             base = tok[: -len(suf)]
@@ -88,9 +93,13 @@ def candidates(tokens: list[str]) -> set[str]:
 
 
 def idf(df: int, n: int) -> float:
-    """ln(N/df), Decimal-quantized to 4 dp (ROUND_HALF_UP) for byte-portability."""
+    """ln(N/df), Decimal-quantized to 4 dp (ROUND_HALF_UP) for byte-portability.
+
+    Floored at :data:`IDF_FLOOR` so ``df == n`` yields the minimum representable
+    weight, not 0 (REVIEW.md L6); all other values are unchanged by the floor."""
     val = math.log(n / df)
-    return float(Decimal(str(val)).quantize(_IDF_DP, rounding=ROUND_HALF_UP))
+    quantized = float(Decimal(str(val)).quantize(_IDF_DP, rounding=ROUND_HALF_UP))
+    return max(quantized, IDF_FLOOR)
 
 
 def extract_concepts(

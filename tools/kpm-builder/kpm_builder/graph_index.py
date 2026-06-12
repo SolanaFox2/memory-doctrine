@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import collections
 import json
+import sys
 from pathlib import Path
 
 from kpm_builder._util import atomic_write, read_frontmatters
@@ -197,8 +198,12 @@ def _build_parser():
 
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
-    idx = build_graph_index(args.kpm)          # build once; reuse for write + validate
-    out = compile_graph(args.kpm, index=idx)
+    try:
+        idx = build_graph_index(args.kpm)      # build once; reuse for write + validate
+        out = compile_graph(args.kpm, index=idx)
+    except Exception as exc:  # noqa: BLE001 - CLI surface: one clean line, no traceback (REVIEW.md L2)
+        print(f"error: graph_index: {exc}", file=sys.stderr)
+        sys.exit(1)
     m = idx["meta"]
     print(f"compiled {out} | axioms={m['n_axioms']} concepts={m['n_concepts']} "
           f"mentions={m['n_mentions']}")

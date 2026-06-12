@@ -36,7 +36,8 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from .assemble import assemble, write_reference_notes
+from .assemble import OutputDirError, assemble, prepare_output_dir, write_reference_notes
+from .clamps import clamp_confidence, clamp_generativity
 from .cluster import cluster_axioms
 from .config import Config
 from .distill import distill
@@ -51,7 +52,7 @@ from .verify import verify
 
 
 def _add_output_args(parser: argparse.ArgumentParser) -> None:
-    """Add the output args shared by ``run`` and ``build``."""
+    """Add the output/ingest args shared by ``run`` and ``build`` (REVIEW.md L1)."""
     parser.add_argument(
         "--out",
         required=True,
@@ -64,10 +65,33 @@ def _add_output_args(parser: argparse.ArgumentParser) -> None:
         help="Package name written into knowledge.json (e.g. @kpm/my-notes).",
     )
     parser.add_argument(
+        "--description",
+        default=None,
+        help="Package description written into knowledge.json.",
+    )
+    parser.add_argument(
         "--keep-uncited",
         action="store_true",
         dest="keep_uncited",
         help="Preserve sources no axiom cited into reference/ (nothing dropped).",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Write into a non-empty --out dir even when it is not a package "
+            "this tool produced (its note dirs are cleared of stale *.md)."
+        ),
+    )
+    parser.add_argument(
+        "--max-sources",
+        type=int,
+        default=None,
+        dest="max_sources",
+        help=(
+            "Cap on source files ingested (alphabetical order; truncation "
+            "warns to stderr). Default: config default (200)."
+        ),
     )
 
 
@@ -146,11 +170,6 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         dest="ideas",
         help="Path to the agent-written ideas.json (list of idea objects).",
-    )
-    build.add_argument(
-        "--description",
-        default=None,
-        help="Package description written into knowledge.json.",
     )
     _add_output_args(build)
     build.set_defaults(func=_cmd_build)
@@ -248,11 +267,20 @@ def _cmd_run(args: argparse.Namespace) -> int:
     overrides: dict = {}
     if args.model:
         overrides["model"] = args.model
+    if args.max_sources is not None:
+        overrides["max_sources"] = args.max_sources
     config = Config(input_dir=args.input_dir, output_dir=args.out, **overrides)
 
     input_dir = Path(config.input_dir)
     if not input_dir.is_dir():
         print(f"error: input_dir is not a directory: {input_dir}", file=sys.stderr)
+        return 2
+
+    # Guard the output dir BEFORE any LLM spend (REVIEW.md M1).
+    try:
+        prepare_output_dir(Path(config.output_dir), force=args.force)
+    except OutputDirError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
 
     # Compute today's date ONCE; thread it into assemble (stages stay deterministic).
@@ -283,14 +311,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
     clusters = cluster_axioms(axioms)
 
     name = args.name or "@kpm/distilled-research"
-    assemble(
-        axioms,
-        evidence,
-        config.output_dir,
-        clusters=clusters,
-        run_date=run_date,
-        name=name,
-    )
+    kwargs: dict = {"clusters": clusters, "run_date": run_date, "name": name}
+    if args.description:
+        kwargs["description"] = args.description
+    assemble(axioms, evidence, config.output_dir, **kwargs)
 
     # Coverage: which sources no axiom cited. Optionally preserve them so the
     # package never drops a file silently.
@@ -374,26 +398,10 @@ def _coerce_idea(raw: object) -> Optional[ScoredIdea]:
         statement=statement,
         supporting_source_files=source_files,
         supporting_snippets=snippets,
-        confidence=_clamp_confidence(raw.get("confidence")),
-        generativity=_clamp_generativity(raw.get("generativity")),
+        confidence=clamp_confidence(raw.get("confidence")),
+        generativity=clamp_generativity(raw.get("generativity")),
         rationale=str(raw.get("rationale") or "").strip(),
     )
-
-
-def _clamp_confidence(value: object) -> float:
-    try:
-        c = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    return 0.0 if c < 0.0 else 1.0 if c > 1.0 else c
-
-
-def _clamp_generativity(value: object) -> int:
-    try:
-        g = int(value)
-    except (TypeError, ValueError):
-        return 1
-    return 1 if g < 1 else 5 if g > 5 else g
 
 
 def _load_ideas(path: Path) -> List[ScoredIdea]:
@@ -413,11 +421,21 @@ def _load_ideas(path: Path) -> List[ScoredIdea]:
 
 def _cmd_build(args: argparse.Namespace) -> int:
     """Skill mode: build a KPM package from an agent-written ideas.json."""
-    config = Config(input_dir=args.input_dir, output_dir=args.out)
+    overrides: dict = {}
+    if args.max_sources is not None:
+        overrides["max_sources"] = args.max_sources
+    config = Config(input_dir=args.input_dir, output_dir=args.out, **overrides)
 
     input_dir = Path(config.input_dir)
     if not input_dir.is_dir():
         print(f"error: input_dir is not a directory: {input_dir}", file=sys.stderr)
+        return 2
+
+    # Guard the output dir before writing anything (REVIEW.md M1).
+    try:
+        prepare_output_dir(Path(config.output_dir), force=args.force)
+    except OutputDirError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 2
 
     ideas_path = Path(args.ideas)

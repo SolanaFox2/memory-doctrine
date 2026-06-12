@@ -65,7 +65,7 @@ DEFAULT_TIMEOUT = 120.0
 # ── model defaults ──────────────────────────────────────────────────────────────
 
 _DEFAULT_MODEL: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-5",
+    "anthropic": "claude-sonnet-4-6",
     "deepseek": "deepseek-chat",
     "google": "gemini-2.0-flash",
 }
@@ -90,6 +90,18 @@ _ENV_KEY: dict[Family, str] = {
 }
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+
+
+def _require_env(family_name: str) -> str:
+    """API key for *family_name* from the environment, or a RuntimeError naming
+    the exact missing env var (REVIEW.md L1 — never a bare KeyError)."""
+    env_var = _ENV_KEY[Family(family_name)]
+    value = os.environ.get(env_var, "").strip()
+    if not value:
+        raise RuntimeError(
+            f"{env_var} is not set — required to build the {family_name!r} provider."
+        )
+    return value
 
 
 # ``extract_json`` is re-exported from the shared seam
@@ -134,11 +146,10 @@ def _make_provider_by_name(
     KPM-H2/KPM-H3).
     """
     if family_name == "anthropic":
+        api_key = _require_env(family_name)
         import anthropic  # type: ignore[import-untyped]  # lazy
 
-        client = anthropic.Anthropic(
-            api_key=os.environ["ANTHROPIC_API_KEY"], timeout=timeout
-        )
+        client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
         chosen_model = model or _DEFAULT_MODEL["anthropic"]
 
         def _anthropic_complete(prompt: str, schema: dict) -> dict:
@@ -157,10 +168,11 @@ def _make_provider_by_name(
         return _anthropic_complete
 
     elif family_name == "deepseek":
+        api_key = _require_env(family_name)
         from openai import OpenAI  # type: ignore[import-untyped]  # lazy
 
         client = OpenAI(
-            api_key=os.environ["DEEPSEEK_API_KEY"],
+            api_key=api_key,
             base_url="https://api.deepseek.com",
             timeout=timeout,
         )
@@ -184,9 +196,10 @@ def _make_provider_by_name(
         return _deepseek_complete
 
     elif family_name == "google":
+        api_key = _require_env(family_name)
         import google.generativeai as genai  # type: ignore[import-untyped]  # lazy
 
-        genai.configure(api_key=os.environ["GOOGLE_GENAI_API_KEY"])
+        genai.configure(api_key=api_key)
         chosen_model = model or _DEFAULT_MODEL["google"]
         _client = genai.GenerativeModel(chosen_model)
 
@@ -253,8 +266,9 @@ def make_provider(
     ------
     ValueError
         If *family* is not a recognised ``Family`` member (defensive guard).
-    KeyError
-        If the required env-key (e.g. ``ANTHROPIC_API_KEY``) is not set.
+    RuntimeError
+        If the required env-key (e.g. ``ANTHROPIC_API_KEY``) is not set —
+        the message names the exact variable (REVIEW.md L1).
     """
     return _make_provider_by_name(
         family.value,

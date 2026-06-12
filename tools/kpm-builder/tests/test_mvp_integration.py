@@ -12,7 +12,8 @@ or "relevant" (gate.py relevance pattern).
 
 Assertions (load-bearing):
   1. claim_B's confidence is NOT SUPPORTED (must be PARTIAL or UNVERIFIED).
-  2. claim_A is ANSWERED/supported in the coverage report.
+  2. The beat ABSTAINS: claim_A is the only entailed claim, and a dropped
+     over_claims claim is not a quality source (REVIEW.md M1).
   3. Every CoverageRow has corpus_relative=True.
   4. The CoverageReport carries a termination_reason.
   5. The written KPM passes the Organizer's validate() (lint_ok=True).
@@ -173,14 +174,20 @@ class TestMvpIntegration:
             pass
 
     # ------------------------------------------------------------------
-    # 2. claim_A must be ANSWERED/supported.
+    # 2. The beat must NOT be ANSWERED (REVIEW.md M1): claim_A is the only
+    #    entailed claim (1 quality source < 2), and claim_B's over_claims
+    #    verdict must not be counted as a second quality source.  This test
+    #    previously pinned the buggy behavior (ANSWERED).
     # ------------------------------------------------------------------
-    def test_claim_a_is_answered(self, outcome_and_outdir):
+    def test_single_entailed_claim_abstains(self, outcome_and_outdir):
         outcome, _ = outcome_and_outdir
-        report = outcome.report
-        answered_rows = [r for r in report.rows if r.state == CoverageState.ANSWERED]
-        assert answered_rows, (
-            "claim_A is entailed but no row is ANSWERED in the coverage report."
+        row = outcome.report.rows[0]
+        assert row.state != CoverageState.ANSWERED, (
+            "Beat reported ANSWERED with one entails + one over_claims — the "
+            "dropped claim inflated the quality-source count (REVIEW.md M1)."
+        )
+        assert row.state == CoverageState.ABSTAINED, (
+            f"Expected ABSTAINED (1 entailed source < 2), got {row.state}."
         )
 
     # ------------------------------------------------------------------

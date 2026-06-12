@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
+from .clamps import clamp_confidence, clamp_generativity
 from .distill import Idea
 from .llm import CompleteJSON
 from .llm_core import UNTRUSTED_PREAMBLE, coerce_result_dict, delimit_untrusted
@@ -77,30 +78,6 @@ def build_prompt(idea: Idea) -> str:
     return f"{rubric}\n\n{UNTRUSTED_PREAMBLE}\n\n---\n\n{_render_idea(idea)}"
 
 
-def _clamp_confidence(value: object) -> float:
-    try:
-        c = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    if c < 0.0:
-        return 0.0
-    if c > 1.0:
-        return 1.0
-    return c
-
-
-def _clamp_generativity(value: object) -> int:
-    try:
-        g = int(value)
-    except (TypeError, ValueError):
-        return 1
-    if g < 1:
-        return 1
-    if g > 5:
-        return 5
-    return g
-
-
 def score_idea(idea: Idea, complete_json: CompleteJSON) -> ScoredIdea:
     """Score a single idea against doctrine C1, returning a ScoredIdea."""
     prompt = build_prompt(idea)
@@ -111,8 +88,8 @@ def score_idea(idea: Idea, complete_json: CompleteJSON) -> ScoredIdea:
         statement=idea.statement,
         supporting_source_files=list(idea.supporting_source_files),
         supporting_snippets=list(idea.supporting_snippets),
-        confidence=_clamp_confidence(result.get("confidence")),
-        generativity=_clamp_generativity(result.get("generativity")),
+        confidence=clamp_confidence(result.get("confidence")),
+        generativity=clamp_generativity(result.get("generativity")),
         rationale=(result.get("rationale") or "").strip(),
     )
 

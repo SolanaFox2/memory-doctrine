@@ -74,3 +74,55 @@ def test_resolve_kpm_warns_when_js_override_but_no_node(tmp_path, monkeypatch, c
     monkeypatch.setattr(V.shutil, "which", lambda name: None)  # no node, no kpm
     assert V._resolve_kpm() is None
     assert "node" in capsys.readouterr().err.lower()
+
+
+# --- structured lint failures (REVIEW.md M7 / L7) ---------------------------
+
+
+def test_lint_failure_yields_structured_violations(tmp_path):
+    """A broken note must surface the linter's per-violation errors."""
+    _pkg(tmp_path)
+    axiom = next((tmp_path / "axioms").glob("*.md"))
+    axiom.write_text(axiom.read_text().replace("confidence: 0.7", "confidence: 7.0"))
+
+    vr = V.validate(tmp_path, kpm_argv=[])
+    assert not vr.lint_ok
+    assert vr.lint_violations
+    assert any("confidence" in v for v in vr.lint_violations)
+
+
+def test_lint_failure_when_shipped_linter_missing(tmp_path):
+    """The package must SHIP its validator; a missing copy is a lint failure."""
+    _pkg(tmp_path)
+    (tmp_path / "scripts" / "doctrine_lint.py").unlink()
+    vr = V.validate(tmp_path, kpm_argv=[])
+    assert not vr.lint_ok
+    assert vr.lint_violations == ["vendored scripts/doctrine_lint.py is missing"]
+
+
+def test_lint_runs_in_process_not_as_subprocess(tmp_path, monkeypatch):
+    """REVIEW.md M7: the lint gate must not depend on subprocess stdout scraping."""
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("doctrine_lint must run in-process")
+
+    monkeypatch.setattr(V.subprocess, "run", _boom)
+    vr = V.validate(_pkg(tmp_path), kpm_argv=[])  # kpm skipped -> no subprocess at all
+    assert vr.lint_ok
+
+
+# --- kpm doctor timeout (REVIEW.md M8) ---------------------------------------
+
+
+def test_kpm_doctor_timeout_is_a_doctor_failure_not_a_crash(tmp_path, monkeypatch):
+    _pkg(tmp_path)
+
+    def _hang(cmd, **kwargs):
+        assert kwargs.get("timeout") == V.SUBPROCESS_TIMEOUT_S
+        raise V.subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(V.subprocess, "run", _hang)
+    vr = V.validate(tmp_path, kpm_argv=["kpm"])
+    assert vr.lint_ok  # the lint gate is unaffected
+    assert vr.doctor_ok is False
+    assert "timed out" in vr.doctor_output

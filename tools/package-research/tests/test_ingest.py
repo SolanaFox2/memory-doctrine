@@ -145,6 +145,79 @@ def test_passages_by_source_does_not_merge_same_basename_different_dirs():
     assert "from 2026" in grouped["2026/notes.md"][0]
 
 
+# --- path safety, caps, and skip paths (REVIEW.md M5/M6/L2/L7) -------------
+
+
+def test_symlink_outside_input_dir_is_skipped_with_warning(tmp_path, capsys):
+    """REVIEW.md M5: a symlink escaping the input tree must not be ingested."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.md").write_text("# Secret\n\nleaked content", encoding="utf-8")
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "real.md").write_text("# Real\n\nkept content", encoding="utf-8")
+    (notes / "leak.md").symlink_to(outside / "secret.md")
+
+    cands = ingest(Config(input_dir=notes))
+    sources = {c.source_file for c in cands}
+    assert sources == {"real.md"}
+    assert not any("leaked content" in c.text for c in cands)
+    err = capsys.readouterr().err
+    assert "symlink" in err and "leak.md" in err
+
+
+def test_symlink_inside_input_dir_is_kept(tmp_path):
+    notes = tmp_path / "notes"
+    notes.mkdir()
+    (notes / "real.md").write_text("# Real\n\ncontent", encoding="utf-8")
+    (notes / "alias.md").symlink_to(notes / "real.md")
+    cands = ingest(Config(input_dir=notes))
+    assert {"real.md", "alias.md"} == {c.source_file for c in cands}
+
+
+def test_relative_source_never_emits_an_absolute_path(tmp_path):
+    """REVIEW.md M5: the fallback locator is the basename, never an abs path."""
+    from package_research.ingest import _relative_source
+
+    foreign = tmp_path / "elsewhere" / "note.md"
+    assert _relative_source(foreign, tmp_path / "notes") == "note.md"
+    assert _relative_source(tmp_path / "notes" / "a" / "b.md", tmp_path / "notes") == "a/b.md"
+
+
+def test_max_sources_truncation_warns_with_count(tmp_path, capsys):
+    """REVIEW.md M6: truncation must say how many files were dropped."""
+    for name in ("a.md", "b.md", "c.md"):
+        (tmp_path / name).write_text(f"# {name}\n\ncontent of {name}", encoding="utf-8")
+    cands = ingest(Config(input_dir=tmp_path, max_sources=2))
+    assert {c.source_file for c in cands} == {"a.md", "b.md"}  # alphabetical
+    err = capsys.readouterr().err
+    assert "3 source files found" in err
+    assert "1 file(s) skipped" in err
+
+
+def test_no_truncation_no_warning(tmp_path, capsys):
+    (tmp_path / "a.md").write_text("# A\n\ncontent", encoding="utf-8")
+    ingest(Config(input_dir=tmp_path, max_sources=2))
+    assert "skipped" not in capsys.readouterr().err
+
+
+def test_zero_sources_warns_to_stderr(tmp_path, capsys):
+    """REVIEW.md L2: an empty corpus must be distinguishable from "all refuted"."""
+    assert ingest(Config(input_dir=tmp_path)) == []
+    err = capsys.readouterr().err
+    assert "no .md/.txt source files" in err
+
+
+def test_non_utf8_source_is_skipped_with_warning(tmp_path, capsys):
+    """REVIEW.md L7: one undecodable note must not abort the run — skip loudly."""
+    (tmp_path / "bad.md").write_bytes(b"# Bad\n\xff\xfe broken bytes")
+    (tmp_path / "good.md").write_text("# Good\n\nfine content", encoding="utf-8")
+    cands = ingest(Config(input_dir=tmp_path))
+    assert {c.source_file for c in cands} == {"good.md"}
+    err = capsys.readouterr().err
+    assert "bad.md" in err and "UTF-8" in err
+
+
 def test_passages_by_source_can_keep_noise_when_asked():
     cands = [Candidate(text="## Methodology\n\nx", source_file="n.md", char_span=(0, 1))]
     assert passages_by_source(cands, drop_noise=False)["n.md"]

@@ -363,3 +363,36 @@ def test_relevance_prompt_isolates_scraped_content():
     assert '<untrusted-content label="https://ex.com/a">' in p
     # the hostile close-tag is neutralized inside the block
     assert p.count("</untrusted-content>") == 1
+
+
+# ---------------------------------------------------------------------------
+# REVIEW.md M3 — malformed judge output is counted, not silently "not relevant"
+# ---------------------------------------------------------------------------
+
+class TestMalformedJudgeOutput:
+    def test_missing_key_is_counted_and_defaults_false(self):
+        from package_research.llm_core import malformed_counts, reset_malformed
+
+        reset_malformed()
+        src = Source(url="https://example.com/x", text="content")
+        result = is_relevant(src, make_contract(), complete_json=fake_complete_json_empty)
+        assert result is False
+        assert malformed_counts().get("gate") == 1
+
+    def test_non_dict_is_counted_and_defaults_false(self):
+        from package_research.llm_core import malformed_counts, reset_malformed
+
+        reset_malformed()
+        src = Source(url="https://example.com/x", text="content")
+        result = is_relevant(src, make_contract(), complete_json=lambda p, s: ["garbage"])
+        assert result is False
+        assert malformed_counts().get("gate") == 1
+
+    def test_explicit_no_is_not_counted_as_malformed(self):
+        from package_research.llm_core import malformed_counts, reset_malformed
+
+        reset_malformed()
+        src = Source(url="https://example.com/x", text="content")
+        result = is_relevant(src, make_contract(), complete_json=fake_complete_json_false)
+        assert result is False
+        assert "gate" not in malformed_counts()    # a judged "no" is not garbage

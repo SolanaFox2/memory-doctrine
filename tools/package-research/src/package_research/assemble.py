@@ -28,6 +28,7 @@ Invariants enforced (so the output always passes ``doctrine_lint``):
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -52,6 +53,43 @@ _RELATION_KEYS = (
 )
 
 
+#: The note dirs a package owns — the ones prepare_output_dir may clear.
+_PACKAGE_SUBDIRS = ("axioms", "evidence", "reference", "clusters")
+
+
+class OutputDirError(RuntimeError):
+    """The output dir is non-empty and not a package this tool produced."""
+
+
+def prepare_output_dir(output_dir: Path, *, force: bool = False) -> None:
+    """Make ``output_dir`` safe to assemble into (REVIEW.md M1).
+
+    Assemble writes in place, so re-running over a previous package would leave
+    notes whose ids no longer exist — stale orphans that pollute (and can fail)
+    the lint. A directory is recognizably *ours* when it carries a
+    ``knowledge.json``; then the package's own note dirs (``axioms/``,
+    ``evidence/``, ``reference/``, ``clusters/``) are cleared of ``*.md`` before
+    the rewrite. A non-empty directory that is NOT a recognizable package is
+    someone's data: raise :class:`OutputDirError` unless ``force`` — never
+    silently delete user files. A missing or empty directory is a no-op.
+    """
+    output_dir = Path(output_dir)
+    if not output_dir.is_dir() or not any(output_dir.iterdir()):
+        return
+    if not (output_dir / "knowledge.json").is_file() and not force:
+        raise OutputDirError(
+            f"output dir {output_dir} is non-empty and not a package this tool "
+            "produced (no knowledge.json). Refusing to write into it — choose "
+            "an empty directory or pass --force."
+        )
+    for sub in _PACKAGE_SUBDIRS:
+        d = output_dir / sub
+        if not d.is_dir():
+            continue
+        for stale in d.glob("*.md"):
+            stale.unlink()
+
+
 @dataclass
 class AssembleResult:
     """What assemble wrote: the output dir and the notes actually emitted."""
@@ -67,8 +105,13 @@ class AssembleResult:
 
 
 def _yaml_str(value) -> str:
-    """Emit a YAML-safe double-quoted scalar (coerces non-str, e.g. Path)."""
-    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+    """Emit a YAML-safe double-quoted scalar (coerces non-str, e.g. Path).
+
+    All whitespace control characters (``\\n``, ``\\r``, ``\\t``) collapse to a
+    plain space so no raw control byte lands in the frontmatter (REVIEW.md L5).
+    """
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    escaped = re.sub(r"[\n\r\t]", " ", escaped)
     return f'"{escaped}"'
 
 

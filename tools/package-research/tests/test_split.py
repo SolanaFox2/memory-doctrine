@@ -307,3 +307,35 @@ def test_split_default_keeps_candidate_for_unchallenged_ideas():
     """Skill-mode build ideas were not challenged by the tool — no promotion."""
     axioms, _ = split([_scored("Unchallenged claim.", ["a.md"], ["snip"], confidence=0.9)])
     assert axioms[0].status == "candidate"
+
+
+# ── abbreviation-safe titles (REVIEW.md L4) ─────────────────────────────────────
+
+from package_research.split import _title_from_statement  # noqa: E402
+
+
+def test_title_survives_leading_abbreviation():
+    # The L4 regression: "e.g. ..." must not truncate the title to "e".
+    assert (
+        _title_from_statement("e.g. Caching avoids recomputation. It saves work.")
+        == "e.g. Caching avoids recomputation"
+    )
+
+
+def test_title_survives_inline_abbreviations():
+    assert (
+        _title_from_statement("Prefer precise terms, i.e. named entities, when indexing. More.")
+        == "Prefer precise terms, i.e. named entities, when indexing"
+    )
+    assert _title_from_statement("Caches, queues, etc. all trade space for time") == (
+        "Caches, queues, etc. all trade space for time"
+    )
+    assert _title_from_statement("Recall vs. recognition differ; both matter.") == (
+        "Recall vs. recognition differ"
+    )
+
+
+def test_title_still_breaks_on_plain_clause_boundaries():
+    assert _title_from_statement("Caching helps: it avoids recomputation.") == "Caching helps"
+    assert _title_from_statement("Plain statement. Second sentence.") == "Plain statement"
+    assert _title_from_statement("No boundary at all") == "No boundary at all"

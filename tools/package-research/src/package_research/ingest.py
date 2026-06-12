@@ -119,14 +119,14 @@ def _split_by_cap(raw: str, start: int, end: int, cap: int) -> List[Tuple[int, i
 def _relative_source(path: Path, input_dir: Path) -> str:
     """Return ``path`` as a posix string relative to ``input_dir``.
 
-    Falls back to the bare posix path if ``path`` is not under ``input_dir``
-    (e.g. symlinks), so a source locator is always a clean ``str``.
+    Falls back to the file's bare *basename* if ``path`` is not under
+    ``input_dir`` — NEVER an absolute path, which would leak the local
+    filesystem layout into the package's ``ref:``/``url:`` fields (REVIEW.md M5).
     """
     try:
-        rel = path.relative_to(input_dir)
+        return path.relative_to(input_dir).as_posix()
     except ValueError:
-        rel = path
-    return rel.as_posix()
+        return path.name
 
 
 def _passages_for_file(path: Path, input_dir: Path, cap: int) -> List[Candidate]:
@@ -160,7 +160,31 @@ def _passages_for_file(path: Path, input_dir: Path, cap: int) -> List[Candidate]
 
 
 def _iter_source_files(input_dir: Path) -> List[Path]:
-    return [p for p in sorted(input_dir.rglob("*")) if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES]
+    """Supported source files under ``input_dir``, sorted.
+
+    Symlinks resolving *outside* the input tree are skipped with a stderr
+    warning (REVIEW.md M5): following them would pull foreign content into the
+    package and their locators could not be expressed relative to ``input_dir``.
+    Symlinks resolving inside the tree are kept.
+    """
+    root = input_dir.resolve()
+    out: List[Path] = []
+    for p in sorted(input_dir.rglob("*")):
+        if not (p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES):
+            continue
+        if p.is_symlink():
+            try:
+                resolved = p.resolve(strict=True)
+            except OSError:
+                continue  # broken link — nothing to read
+            if not resolved.is_relative_to(root):
+                print(
+                    f"warning: {p} is a symlink resolving outside {input_dir} — skipped",
+                    file=sys.stderr,
+                )
+                continue
+        out.append(p)
+    return out
 
 
 def passage_heading(text: str) -> str:
@@ -240,6 +264,13 @@ def ingest(config: Config) -> List[Candidate]:
         raise NotADirectoryError(f"input_dir is not a directory: {input_dir}")
 
     files = _iter_source_files(input_dir)
+    if not files:
+        # An empty corpus must be distinguishable from "all refuted" (REVIEW.md L2).
+        print(
+            f"warning: no .md/.txt source files found under {input_dir} — "
+            "the resulting package will be empty.",
+            file=sys.stderr,
+        )
     if len(files) > config.max_sources:
         # Never truncate silently — say exactly what was dropped (no hidden caps).
         print(

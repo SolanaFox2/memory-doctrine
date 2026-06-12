@@ -1,22 +1,28 @@
 """Validate stage — run the deterministic gates against an assembled package.
 
-Two gates, both run as subprocesses against ``output_dir``:
+Two gates against ``output_dir``:
 
-1. **doctrine_lint** (always). Runs the package's own vendored
-   ``scripts/doctrine_lint.py`` against the package. This is the doctrine's
-   structural validator: confidence/generativity bounds, every axiom cites >=1
-   resolving evidence id, every relation has a matching wikilink, evidence notes
-   carry ``url`` + ``verified``. Exit 0 = clean.
+1. **doctrine_lint** (always, in-process). Imports the vendored linter module
+   and calls its ``check()`` directly (REVIEW.md M7) — no subprocess, no
+   scraping another process's output format. This is the doctrine's structural
+   validator: confidence/generativity bounds, every axiom cites >=1 resolving
+   evidence id, every relation has a matching wikilink, evidence notes carry
+   ``url`` + ``verified``. The package must still *ship* its own
+   ``scripts/doctrine_lint.py`` (it self-validates), and a byte-identity test
+   keeps that copy equal to the imported module.
 
-2. **kpm doctor** (best-effort). If the kpm CLI is present, run ``kpm doctor``
-   from the package directory. Absence is tolerated — ``doctor_ok`` is ``None``
-   when kpm is unavailable rather than a failure.
+2. **kpm doctor** (best-effort, subprocess). If the kpm CLI is present, run
+   ``kpm doctor`` from the package directory with a hard timeout (REVIEW.md
+   M8) — a hung kpm becomes a doctor failure, never a hung run. Absence is
+   tolerated — ``doctor_ok`` is ``None`` when kpm is unavailable.
 
-No LLM here. Pure subprocess orchestration over an already-written package.
+No LLM here. Pure orchestration over an already-written package.
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import shutil
 import subprocess
@@ -24,6 +30,9 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
+
+#: Hard cap on any validation subprocess (a hung `kpm` must not hang the run).
+SUBPROCESS_TIMEOUT_S = 120
 
 
 @dataclass
@@ -38,26 +47,42 @@ class ValidationResult:
 
 
 def _run_doctrine_lint(output_dir: Path) -> tuple[bool, List[str]]:
-    """Run the package's vendored doctrine_lint.py against itself."""
-    lint = output_dir / "scripts" / "doctrine_lint.py"
-    if not lint.is_file():
+    """Run the doctrine linter in-process against the package (REVIEW.md M7).
+
+    Imports the vendored linter module and calls its ``check()`` directly. The
+    frozen linter reports violations only by printing, so its stdout is
+    captured via ``redirect_stdout`` and the ``  - <violation>`` lines are
+    collected — same line shape, but now produced and consumed inside one
+    process pinned to one module version, not scraped across a subprocess
+    boundary. The shipped ``scripts/doctrine_lint.py`` must still exist (the
+    package self-validates); a wiring test keeps it byte-identical to the
+    imported module.
+    """
+    if not (output_dir / "scripts" / "doctrine_lint.py").is_file():
         return False, ["vendored scripts/doctrine_lint.py is missing"]
-    proc = subprocess.run(
-        [sys.executable, str(lint), str(output_dir)],
-        capture_output=True,
-        text=True,
-    )
-    ok = proc.returncode == 0
+    try:
+        from .vendor import doctrine_lint
+    except ImportError as exc:  # e.g. pyyaml missing
+        return False, [f"doctrine_lint could not be imported: {exc}"]
+
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            rc = doctrine_lint.check(output_dir)
+    except Exception as exc:  # a broken package must fail the gate, not the run
+        return False, [f"doctrine_lint crashed: {exc}"]
+    if rc == 0:
+        return True, []
+
     violations: List[str] = []
-    if not ok:
-        for line in proc.stdout.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("- "):
-                violations.append(stripped[2:])
-        if not violations:
-            # Surface whatever the linter printed so failures aren't silent.
-            violations = [ln for ln in (proc.stdout + proc.stderr).splitlines() if ln.strip()]
-    return ok, violations
+    for line in buf.getvalue().splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            violations.append(stripped[2:])
+    if not violations:
+        # Surface whatever the linter printed so failures aren't silent.
+        violations = [ln for ln in buf.getvalue().splitlines() if ln.strip()]
+    return False, violations
 
 
 def _resolve_kpm() -> Optional[List[str]]:
@@ -107,13 +132,21 @@ def _resolve_kpm() -> Optional[List[str]]:
 
 
 def _run_kpm_doctor(output_dir: Path, kpm_argv: List[str]) -> tuple[bool, str]:
-    """Run ``kpm doctor`` from inside the package directory."""
-    proc = subprocess.run(
-        [*kpm_argv, "doctor"],
-        cwd=str(output_dir),
-        capture_output=True,
-        text=True,
-    )
+    """Run ``kpm doctor`` from inside the package directory.
+
+    A hung kpm is cut off after :data:`SUBPROCESS_TIMEOUT_S` and reported as a
+    doctor *failure*, never as a crash or a hung run (REVIEW.md M8).
+    """
+    try:
+        proc = subprocess.run(
+            [*kpm_argv, "doctor"],
+            cwd=str(output_dir),
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"kpm doctor timed out after {SUBPROCESS_TIMEOUT_S}s"
     return proc.returncode == 0, (proc.stdout + proc.stderr).strip()
 
 

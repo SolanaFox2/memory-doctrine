@@ -15,7 +15,6 @@ Design (SPEC-relate.md v1):
 """
 from __future__ import annotations
 
-import re
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
@@ -25,12 +24,9 @@ import yaml
 
 # Reuse the existing seam — do not reimplement.  The seam returns a parsed dict
 # (same contract as ground.py), so no JSON text-parsing is needed here.
+from kpm_builder._util import split_frontmatter
 from kpm_builder.providers import CompleteJSON
 from package_research.llm_core import UNTRUSTED_PREAMBLE, delimit_untrusted
-
-# Line-anchored frontmatter split (same shape as the public linter's _parse):
-# a bare `---` inside a value can't truncate it.
-_FM_SPLIT = re.compile(r"(?m)^---[ \t]*$")
 
 
 # ── data model ────────────────────────────────────────────────────────────────
@@ -81,10 +77,11 @@ class RelateResult:
 def parse_axiom_md(text: str) -> AxiomView:
     """Parse a KPM axiom .md into an AxiomView.
 
-    Splits on a line-anchored ``---`` so a ``---`` inside a value (e.g. a slugged
-    URL) cannot truncate the frontmatter, then yaml-loads the frontmatter block.
+    Uses the canonical line-anchored splitter (``_util.split_frontmatter``) so a
+    ``---`` inside a value (e.g. a slugged URL) cannot truncate the frontmatter,
+    then yaml-loads the frontmatter block.
     """
-    parts = _FM_SPLIT.split(text, maxsplit=2)
+    parts = split_frontmatter(text)
     if len(parts) < 3:
         raise ValueError("axiom note has no parseable frontmatter")
     fm = yaml.safe_load(parts[1]) or {}
@@ -297,7 +294,7 @@ def parse_evidence_md(text: str) -> tuple[str, str]:
     The passage is the note body with markdown header lines (``# …``) removed —
     i.e. the verbatim source snippet the axiom is grounded to.
     """
-    parts = _FM_SPLIT.split(text, maxsplit=2)
+    parts = split_frontmatter(text)
     if len(parts) < 3:
         return "", ""
     fm = yaml.safe_load(parts[1]) or {}
@@ -434,8 +431,12 @@ def main(argv: list[str] | None = None) -> None:
     from kpm_builder.apply_relations import relate_and_apply
     from kpm_builder.providers import Family, make_provider
 
-    cj = make_provider(Family(args.family))
-    result = relate_and_apply(args.kpm, complete_json=cj)
+    try:
+        cj = make_provider(Family(args.family))
+        result = relate_and_apply(args.kpm, complete_json=cj)
+    except Exception as exc:  # noqa: BLE001 - CLI surface: one clean line, no traceback (REVIEW.md L2)
+        print(f"error: relate: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(
         f"relate: wrote {len(result.relations)} verified relation(s) to "
         f"{args.kpm} (capped {result.capped})."

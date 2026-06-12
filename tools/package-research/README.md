@@ -70,14 +70,23 @@ the package. A ready-made sample corpus lives in [`examples/notes/`](examples/no
 package-research run ./examples/notes --out ./example-kpm
 ```
 
-Options:
+Options (shared by `run` and `build` unless noted):
 
 | Flag | Meaning |
 |------|---------|
 | `--out DIR` | **Required.** Where the KPM package is written. |
-| `--model MODEL` | Anthropic model for the LLM stages (default: `claude-sonnet-4-5`). |
+| `--model MODEL` | `run` only. Anthropic model for the LLM stages (default: `claude-sonnet-4-6`). |
 | `--name NAME` | Package name in `knowledge.json` (e.g. `@kpm/caching-basics`). |
+| `--description TEXT` | Package description in `knowledge.json`. |
 | `--keep-uncited` | Preserve sources no axiom cited into `reference/`, so nothing is silently dropped. |
+| `--max-sources N` | Cap on source files ingested (alphabetical; truncation warns to stderr). Default 200. |
+| `--force` | Write into a non-empty `--out` dir even when it is not a package this tool produced. |
+
+Re-running into the same `--out` is safe: a directory that already holds a
+package (has a `knowledge.json`) gets its `axioms/`, `evidence/`, `reference/`
+and `clusters/` notes cleared first, so no stale notes from a previous run
+survive. A non-empty directory that is *not* a recognizable package is refused
+unless you pass `--force` — the tool never silently deletes your data.
 
 On success it prints a summary like:
 
@@ -112,7 +121,9 @@ package-research build ./examples/notes --ideas ./ideas.json --out ./example-kpm
 ```
 
 `build` prints the same summary as `run` and produces an identical, lint-clean
-package. Full rubric + a worked `ideas.json` example are in [`SKILL.md`](SKILL.md).
+package. It takes the same output flags as `run` (`--name`, `--description`,
+`--keep-uncited`, `--max-sources`, `--force` — see the table above). Full
+rubric + a worked `ideas.json` example are in [`SKILL.md`](SKILL.md).
 
 ## What comes out
 

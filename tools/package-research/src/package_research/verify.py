@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
+from .clamps import clamp_confidence
 from .llm import CompleteJSON
 from .llm_core import UNTRUSTED_PREAMBLE, coerce_result_dict, delimit_untrusted
 from .score import ScoredIdea
@@ -90,18 +91,6 @@ def build_prompt(idea: ScoredIdea) -> str:
     return f"{rubric}\n\n{UNTRUSTED_PREAMBLE}\n\n---\n\n{_render_idea(idea)}"
 
 
-def _clamp_confidence(value: object, fallback: float) -> float:
-    try:
-        c = float(value)
-    except (TypeError, ValueError):
-        return fallback
-    if c < 0.0:
-        return 0.0
-    if c > 1.0:
-        return 1.0
-    return c
-
-
 def verify_idea(idea: ScoredIdea, complete_json: CompleteJSON) -> VerificationResult:
     """Verify a single idea against doctrine E4.
 
@@ -125,7 +114,9 @@ def verify_idea(idea: ScoredIdea, complete_json: CompleteJSON) -> VerificationRe
     )
 
     survives = bool(result.get("survives"))
-    adjusted = _clamp_confidence(result.get("adjusted_confidence"), idea.confidence)
+    # The fallback is the idea's PRIOR confidence: garbage from the model must
+    # not zero a survivor (the min() below still forbids any raise).
+    adjusted = clamp_confidence(result.get("adjusted_confidence"), fallback=idea.confidence)
     # Verification may only down-score a survivor, never raise its confidence.
     adjusted = min(idea.confidence, adjusted)
 

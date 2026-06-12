@@ -139,18 +139,18 @@ def test_resolve_reconciled_requires_entailing_truth():
            "truth_passage_id": "ea", "explanation": "approximation", "basis": ["ea"]}
     # grounder confirms the truth is entailed by ea → reconciled stands
     r = resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=_verdict(raw),
-                ground_fn=lambda claim, passage: "entails")
+                ground_fn=lambda claim, passage, eids: "entails")
     assert r.status is Verdict.RECONCILED and r.truth_passage_id == "ea"
     # grounder says the truth over-claims its passage → downgrade to dispute
     r2 = resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=_verdict(raw),
-                 ground_fn=lambda claim, passage: "over_claims")
+                 ground_fn=lambda claim, passage, eids: "over_claims")
     assert r2.status is Verdict.DISPUTE
 
 
 def test_resolve_reconciled_without_passage_is_dispute():
     raw = {"status": "reconciled", "truth": "X", "explanation": "no citation", "basis": []}
     r = resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=_verdict(raw),
-                ground_fn=lambda c, p: "entails")
+                ground_fn=lambda c, p, e: "entails")
     assert r.status is Verdict.DISPUTE          # no truth_passage_id → can't reconcile
 
 
@@ -158,27 +158,60 @@ def test_resolve_error_downgrades_when_axiom_is_faithful():
     raw = {"status": "error", "error_axiom": "b", "explanation": "b looks wrong", "basis": ["eb"]}
     # b faithfully entails its own source → it's a dispute, not an axiom error
     r = resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=_verdict(raw),
-                ground_fn=lambda c, p: "entails")
+                ground_fn=lambda c, p, e: "entails")
     assert r.status is Verdict.DISPUTE
     # b over-claims its own source → error stands
     r2 = resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=_verdict(raw),
-                 ground_fn=lambda c, p: "over_claims")
+                 ground_fn=lambda c, p, e: "over_claims")
     assert r2.status is Verdict.ERROR
 
 
 def test_resolve_malformed_defaults_to_dispute():
     r = resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=_verdict({}),
-                ground_fn=lambda c, p: "entails")
+                ground_fn=lambda c, p, e: "entails")
     assert r.status is Verdict.DISPUTE
 
 
 def test_resolve_distinct_skips_grounding():
-    def no_ground(claim, passage):
+    def no_ground(claim, passage, eids):
         raise AssertionError("distinct must not ground a truth")
 
     raw = {"status": "distinct", "explanation": "finalization time vs epoch length — different things"}
     r = resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=_verdict(raw), ground_fn=no_ground)
     assert r.status is Verdict.DISTINCT and r.truth == "" and r.dissent is not None
+
+
+def test_ground_provenance_threads_real_evidence():
+    """REVIEW.md M5 — the default grounder's snapshot carries the cited evidence
+    note's real url + verified date; with no note metadata the ref is derived
+    from the evidence id, never a fixed internal:// fake."""
+    from kpm_builder.resolve import _ground_provenance
+
+    meta = {"ea": {"id": "ea", "url": "https://ex.com/1", "verified": "2026-06-05"}}
+    assert _ground_provenance(("ea",), meta) == ("https://ex.com/1", "2026-06-05")
+    # ref: fallback when url is absent
+    meta_ref = {"eb": {"id": "eb", "ref": "https://ex.com/2"}}
+    assert _ground_provenance(("eb",), meta_ref) == ("https://ex.com/2", "unknown")
+    # no metadata at all → honest derived provenance
+    assert _ground_provenance(("ec",), {}) == ("evidence://ec", "unknown")
+    assert _ground_provenance((), {}) == ("evidence://unknown", "unknown")
+
+
+def test_default_ground_path_uses_evidence_meta():
+    """The default ground_fn (no injected ground_fn) still resolves — exercised
+    through resolve()'s reconciled re-check with evidence_meta supplied."""
+    raw = {"status": "reconciled", "truth": "Finality is 12.8 minutes.",
+           "truth_passage_id": "ea", "explanation": "approximation", "basis": ["ea"]}
+
+    def fake(prompt, schema):
+        if "independent fact-verifier" in prompt:          # ground.py call
+            assert "12.8 minutes, two epochs" in prompt    # passage reached the grounder
+            return {"verdict": "entails", "supported_paraphrase": "", "dropped": [], "reason": ""}
+        return raw
+
+    meta = {"ea": {"id": "ea", "url": "https://ex.com/1", "verified": "2026-06-05"}}
+    r = resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=fake, evidence_meta=meta)
+    assert r.status is Verdict.RECONCILED
 
 
 def test_resolve_prompt_demands_single_passage_truth():
@@ -188,7 +221,7 @@ def test_resolve_prompt_demands_single_passage_truth():
         captured["p"] = prompt
         return {"status": "dispute", "explanation": "x"}
 
-    resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=fake, ground_fn=lambda c, p: "entails")
+    resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=fake, ground_fn=lambda c, p, e: "entails")
     # the scoping instruction is present (truth must not bundle cross-passage reasoning)
     assert "ONLY the one precise fact" in captured["p"] and "distinct" in captured["p"]
 
@@ -200,7 +233,7 @@ def test_resolve_prompt_isolated_from_proposer_rationale():
         captured["p"] = prompt
         return {"status": "dispute", "explanation": "x"}
 
-    resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=fake, ground_fn=lambda c, p: "entails")
+    resolve(_CAND, _STMTS, _EVID, _AXEV, complete_json=fake, ground_fn=lambda c, p, e: "entails")
     p = captured["p"]
     assert "Finality takes 12.8 minutes." in p and "15 minutes to finalize." in p
     assert "PROPOSER SECRET RATIONALE" not in p      # isolation
@@ -248,6 +281,21 @@ def test_record_resolution_writes_cluster_note(tmp_path):
 def test_cli_parser_smoke():
     ns = _build_parser().parse_args(["--kpm", "d", "--resolved", "2026-06-05"])
     assert ns.kpm == "d" and ns.resolved == "2026-06-05"
+
+
+def test_main_prints_clean_error_and_exits(monkeypatch, capsys):
+    """REVIEW.md L2 — a failing run exits 1 with one clean line, no traceback."""
+    import pytest
+
+    from kpm_builder.resolve import main
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(SystemExit) as ei:
+        main(["--kpm", "nowhere"])
+    assert ei.value.code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: resolve:") and "ANTHROPIC_API_KEY" in err
+    assert "Traceback" not in err
 
 
 def test_resolve_kpm_end_to_end(tmp_path):

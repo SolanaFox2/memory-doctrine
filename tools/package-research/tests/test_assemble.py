@@ -188,3 +188,77 @@ def test_reference_bucket_does_not_break_doctrine_lint(tmp_path):
     write_reference_notes({"dropped.md": ["## X\n\nuncited content"]}, tmp_path, run_date=RUN_DATE)
     vr = validate(tmp_path)
     assert vr.lint_ok, f"reference/ must not break lint: {vr.lint_violations}"
+
+
+# --- YAML scalar safety (REVIEW.md L5) ----------------------------------------
+
+from package_research.assemble import _yaml_str  # noqa: E402
+
+
+def test_yaml_str_normalizes_all_control_whitespace():
+    assert _yaml_str("a\tb\rc\nd") == '"a b c d"'
+    assert _yaml_str('say "hi"\\now') == '"say \\"hi\\"\\\\now"'
+
+
+def test_axiom_with_tab_in_statement_lints_clean(tmp_path):
+    axioms, evidence = split([_scored("A claim\twith a tab. More.", ["t.md"], ["snip"])])
+    assemble(axioms, evidence, tmp_path, run_date=RUN_DATE)
+    vr = validate(tmp_path)
+    assert vr.lint_ok, vr.lint_violations
+
+
+# --- output-dir guard (REVIEW.md M1) ------------------------------------------
+
+import pytest  # noqa: E402
+from package_research.assemble import OutputDirError, prepare_output_dir  # noqa: E402
+
+
+def test_prepare_output_dir_noop_on_missing_or_empty(tmp_path):
+    prepare_output_dir(tmp_path / "absent")  # missing: fine
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    prepare_output_dir(empty)  # empty: fine
+    assert not any(empty.iterdir())
+
+
+def test_prepare_output_dir_clears_stale_notes_from_a_package(tmp_path):
+    axioms, evidence = split([_scored("First-run claim.", ["a.md"], ["snip"])])
+    assemble(axioms, evidence, tmp_path, run_date=RUN_DATE)
+    stale = next((tmp_path / "axioms").glob("*.md"))
+    prepare_output_dir(tmp_path)
+    assert not stale.exists()
+    assert not list((tmp_path / "evidence").glob("*.md"))
+    assert (tmp_path / "knowledge.json").is_file()  # manifest untouched
+
+
+def test_prepare_output_dir_refuses_foreign_non_empty_dir(tmp_path):
+    (tmp_path / "thesis-draft.md").write_text("irreplaceable", encoding="utf-8")
+    with pytest.raises(OutputDirError, match="--force"):
+        prepare_output_dir(tmp_path)
+    assert (tmp_path / "thesis-draft.md").read_text() == "irreplaceable"
+
+
+def test_prepare_output_dir_force_overrides_the_guard(tmp_path):
+    (tmp_path / "leftover.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "axioms").mkdir()
+    (tmp_path / "axioms" / "stale.md").write_text("old", encoding="utf-8")
+    prepare_output_dir(tmp_path, force=True)
+    assert not (tmp_path / "axioms" / "stale.md").exists()
+    assert (tmp_path / "leftover.txt").exists()  # only the note dirs are cleared
+
+
+def test_rerun_assemble_leaves_no_orphan_notes(tmp_path):
+    """REVIEW.md M1 + L7: a re-run with different ideas must not keep old ids."""
+    axioms, evidence = split([_scored("Old claim that will vanish.", ["a.md"], ["snip"])])
+    assemble(axioms, evidence, tmp_path, run_date=RUN_DATE)
+    old_axiom = next((tmp_path / "axioms").glob("*.md"))
+
+    prepare_output_dir(tmp_path)
+    axioms2, evidence2 = split([_scored("New claim replacing it.", ["b.md"], ["snip"])])
+    assemble(axioms2, evidence2, tmp_path, run_date=RUN_DATE)
+
+    assert not old_axiom.exists()
+    names = {p.name for p in (tmp_path / "axioms").glob("*.md")}
+    assert names == {"new-claim-replacing-it.md"}
+    vr = validate(tmp_path)
+    assert vr.lint_ok, vr.lint_violations

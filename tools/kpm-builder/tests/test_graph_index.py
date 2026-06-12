@@ -138,3 +138,17 @@ def test_integration_one_third_cluster_and_verified_overlay(tmp_path):
     assert [e["to"] for e in g.neighbors(ids[0])] == [ids[1]]
     assert validate_graph_index(tmp_path, build_graph_index(tmp_path)) == []
     assert validate(str(tmp_path)).lint_ok
+
+
+def test_main_prints_clean_error_and_exits(tmp_path, capsys):
+    """REVIEW.md L2 — a failing run exits 1 with one clean line, no traceback."""
+    import pytest
+
+    from kpm_builder.graph_index import main
+
+    with pytest.raises(SystemExit) as ei:
+        main(["--kpm", str(tmp_path / "no" / "such" / "kpm")])
+    assert ei.value.code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("error: graph_index:")
+    assert "Traceback" not in err

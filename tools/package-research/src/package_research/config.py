@@ -14,6 +14,14 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+def _env_int(name: str, raw: str) -> int:
+    """Parse an integer env var, naming the variable on failure (REVIEW.md L3)."""
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"environment variable {name} must be an integer, got {raw!r}") from exc
+
+
 class Config(BaseModel):
     """Pipeline configuration.
 
@@ -29,7 +37,7 @@ class Config(BaseModel):
         description="Where the produced KPM package will be written.",
     )
     model: str = Field(
-        default="claude-sonnet-4-5",
+        default="claude-sonnet-4-6",
         description="Anthropic model used for the LLM-backed stages.",
     )
     max_sources: int = Field(
@@ -51,19 +59,6 @@ class Config(BaseModel):
         default=40,
         ge=1,
         description="Candidates per distill LLM call (batched so large corpora can't overflow one response).",
-    )
-    # Doctrine-grounded defaults (C1 confidence, A3/E1 generativity).
-    default_confidence: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
-        description="Default confidence (0–1) before evidence-based scoring.",
-    )
-    default_generativity: int = Field(
-        default=3,
-        ge=1,
-        le=5,
-        description="Default generativity (1–5) before scoring.",
     )
 
     model_config = {"arbitrary_types_allowed": True}
@@ -100,11 +95,11 @@ class Config(BaseModel):
         if (m := os.environ.get("PR_MODEL")) is not None:
             data["model"] = m
         if (ms := os.environ.get("PR_MAX_SOURCES")) is not None:
-            data["max_sources"] = int(ms)
+            data["max_sources"] = _env_int("PR_MAX_SOURCES", ms)
         if (mt := os.environ.get("PR_MAX_TOKENS")) is not None:
-            data["max_tokens"] = int(mt)
+            data["max_tokens"] = _env_int("PR_MAX_TOKENS", mt)
         if (bs := os.environ.get("PR_DISTILL_BATCH_SIZE")) is not None:
-            data["distill_batch_size"] = int(bs)
+            data["distill_batch_size"] = _env_int("PR_DISTILL_BATCH_SIZE", bs)
 
         data.update(overrides)
         return cls(**data)
