@@ -11,6 +11,7 @@ from kpm_builder.snapshot import (
     Snapshot,
     SpanRef,
     make_span,
+    passage_span,
     resolve_span,
     snapshot,
 )
@@ -201,7 +202,55 @@ def test_snapshot_fields():
 
 
 # ---------------------------------------------------------------------------
-# 10. Snapshot is immutable (frozen dataclass)
+# 10. passage_span — passage-scoped evidence spans (REVIEW.md KPM-H5)
+# ---------------------------------------------------------------------------
+
+class TestPassageSpan:
+    DOC = "Intro paragraph. The trial showed a 23% reduction (p<0.01). Outro."
+    PASSAGE = "The trial showed a 23% reduction (p<0.01)."
+
+    def test_passage_found_span_is_passage_not_whole_doc(self):
+        s = _snap(text=self.DOC)
+        span = passage_span(s, self.PASSAGE)
+        assert span.text == self.PASSAGE
+        assert span.text != s.text
+
+    def test_passage_found_offsets_are_real(self):
+        s = _snap(text=self.DOC)
+        span = passage_span(s, self.PASSAGE)
+        assert s.text[span.start:span.end] == self.PASSAGE
+        assert span.start == self.DOC.index(self.PASSAGE)
+        assert span.end == span.start + len(self.PASSAGE)
+
+    def test_passage_span_resolves_against_snapshot(self):
+        s = _snap(text=self.DOC)
+        span = passage_span(s, self.PASSAGE)
+        assert resolve_span(s, span) == self.PASSAGE
+
+    def test_none_passage_falls_back_to_whole_document(self):
+        s = _snap(text=self.DOC)
+        span = passage_span(s, None)
+        assert (span.start, span.end, span.text) == (0, len(self.DOC), self.DOC)
+
+    def test_empty_passage_falls_back_to_whole_document(self):
+        s = _snap(text=self.DOC)
+        span = passage_span(s, "")
+        assert span.text == self.DOC
+
+    def test_drifted_passage_falls_back_to_whole_document(self):
+        s = _snap(text=self.DOC)
+        span = passage_span(s, "this passage does not occur in the snapshot")
+        assert (span.start, span.end, span.text) == (0, len(self.DOC), self.DOC)
+
+    def test_empty_snapshot_text_yields_empty_span(self):
+        s = _snap(text="")
+        span = passage_span(s, None)
+        assert (span.start, span.end, span.text) == (0, 0, "")
+        assert span.sha256 == s.sha256
+
+
+# ---------------------------------------------------------------------------
+# 11. Snapshot is immutable (frozen dataclass)
 # ---------------------------------------------------------------------------
 
 def test_snapshot_is_frozen():

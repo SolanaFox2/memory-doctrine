@@ -36,7 +36,7 @@ from kpm_builder.label import (
     question_state,
 )
 from kpm_builder.schema import ConfidenceBucket, ScoredIdea, SourceTier
-from kpm_builder.snapshot import SpanRef, snapshot
+from kpm_builder.snapshot import passage_span, snapshot
 from kpm_builder.strip import strip
 
 # Organizer tail
@@ -71,7 +71,19 @@ def build_from_research(
     contract:
         Dict with keys: ``goal``, ``in_scope``, ``out_of_scope``.
     beats:
-        List of beat dicts (see module docstring for shape).
+        List of beat dicts.  Each claim dict carries ``statement``,
+        ``source`` (``url``/``text``/``venue``), ``ground_verdict``, and
+        optionally:
+
+        - ``supporting_passage`` — the exact passage from ``source.text``
+          that entailed the claim.  When present, the shipped evidence span
+          is scoped to it (REVIEW.md KPM-H5: thin index, rich store); when
+          absent, the span falls back to the whole document.
+        - ``n_corroborations`` — number of distinct INDEPENDENT sources
+          (distinct authors/venues, not raw URLs) that support the same
+          statement, including this one.  Honored as-is (REVIEW.md KPM-M7 /
+          EFF-5): ≥2 lets a top-tier entailed claim reach SUPPORTED;
+          default 1 keeps single-source claims at PARTIAL.
     out_dir:
         Destination directory for the assembled package.
     run_date:
@@ -104,6 +116,7 @@ def build_from_research(
             statement = claim_dict["statement"]
             src_dict = claim_dict["source"]
             ground_verdict = claim_dict["ground_verdict"]
+            supporting_passage = claim_dict.get("supporting_passage")
             n_corroborations = claim_dict.get("n_corroborations", 1)
             survived_refuter = claim_dict.get("survived_refuter", True)
             generativity = claim_dict.get("generativity", 3)
@@ -142,6 +155,7 @@ def build_from_research(
                     "statement": statement,
                     "source": source,
                     "snap": snap,
+                    "supporting_passage": supporting_passage,
                     "tier": tier,
                     "bucket": bucket,
                     "survived_refuter": survived_refuter,
@@ -179,14 +193,11 @@ def build_from_research(
         coverage_rows.append(cov_row)
 
         # Build internal ScoredIdea for SHIPPABLE (entails) claims only.
+        # The span is scoped to the supporting passage when the input carried
+        # one — never the whole document by default (REVIEW.md KPM-H5).
         for c in grounded_claims:
             snap = c["snap"]
-            span = SpanRef(
-                sha256=snap.sha256,
-                start=0,
-                end=len(snap.text),
-                text=snap.text,
-            )
+            span = passage_span(snap, c["supporting_passage"])
             idea = ScoredIdea(
                 statement=c["statement"],
                 source_ref=c["source"].url,

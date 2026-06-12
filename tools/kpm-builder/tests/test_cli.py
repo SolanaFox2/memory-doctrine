@@ -315,6 +315,171 @@ class TestResearchLogPath:
 
 
 # ---------------------------------------------------------------------------
+# Passage-scoped evidence spans (REVIEW.md KPM-H5)
+# ---------------------------------------------------------------------------
+
+_PASSAGE = (
+    "Sleep spindle activity during NREM sleep is necessary for "
+    "hippocampal-neocortical transfer of memories."
+)
+# Marker that exists ONLY outside the supporting passage in the source text.
+_OUTSIDE_MARKER = "GRANT-FUNDING-BOILERPLATE"
+
+_BEAT_PASSAGE = {
+    "question": "What does the evidence say about memory consolidation during sleep?",
+    "claims": [
+        {
+            # Claim WITH a supporting passage → span must be passage-scoped.
+            "statement": "Sleep spindles during NREM are necessary for hippocampal-neocortical transfer.",
+            "source": {
+                "url": "https://arxiv.org/abs/2001.00001",
+                "text": (
+                    _PASSAGE
+                    + " "
+                    + _OUTSIDE_MARKER
+                    + ": this study was funded by grant XYZ-123."
+                ),
+                "venue": "arxiv.org",
+            },
+            "supporting_passage": _PASSAGE,
+            "ground_verdict": "entails",
+            "n_corroborations": 1,
+            "survived_refuter": True,
+            "generativity": 4,
+        },
+        {
+            # Claim WITHOUT a passage → whole-document fallback must hold.
+            "statement": "Spindle density predicts declarative memory consolidation (r=0.71).",
+            "source": {
+                "url": "https://arxiv.org/abs/2001.00002",
+                "text": (
+                    "Our meta-analysis of 18 sleep studies confirms that spindle "
+                    "density predicts declarative memory consolidation with a "
+                    "correlation of r=0.71 across independent cohorts."
+                ),
+                "venue": "arxiv.org",
+            },
+            "ground_verdict": "entails",
+            "n_corroborations": 2,
+            "survived_refuter": True,
+            "generativity": 3,
+        },
+    ],
+}
+
+
+class TestPassageScopedSpans:
+    """KPM-H5 — shipped evidence is the supporting passage, not a doc dump."""
+
+    @pytest.fixture(scope="class")
+    def passage_result(self, tmp_path_factory):
+        tmp = tmp_path_factory.mktemp("passage")
+        out_dir = tmp / "out"
+        outcome = build_from_research(
+            CONTRACT_KPM,
+            [_BEAT_PASSAGE],
+            out_dir=out_dir,
+            run_date=RUN_DATE,
+            fetched_at=FETCHED_AT,
+        )
+        return outcome, out_dir
+
+    def _evidence_body_for(self, out_dir, fragment):
+        """Concatenated text of evidence notes containing `fragment`."""
+        bodies = [
+            f.read_text()
+            for f in (out_dir / "evidence").glob("*.md")
+        ]
+        return "\n".join(b for b in bodies if fragment in b)
+
+    def test_is_kpm(self, passage_result):
+        outcome, _ = passage_result
+        assert outcome.is_kpm is True
+
+    def test_evidence_span_is_the_passage(self, passage_result):
+        """Evidence note for the passage claim carries the passage verbatim."""
+        _, out_dir = passage_result
+        body = self._evidence_body_for(out_dir, _PASSAGE)
+        assert body, "Supporting passage not found in any evidence note."
+
+    def test_evidence_span_excludes_rest_of_document(self, passage_result):
+        """The non-passage part of the document must NOT ship as evidence."""
+        _, out_dir = passage_result
+        for f in (out_dir / "evidence").glob("*.md"):
+            assert _OUTSIDE_MARKER not in f.read_text(), (
+                f"Whole-document text leaked into {f.name} — the span was "
+                "not scoped to the supporting_passage (KPM-H5)."
+            )
+
+    def test_no_passage_claim_falls_back_to_whole_document(self, passage_result):
+        """The claim without a supporting_passage still ships its full source."""
+        _, out_dir = passage_result
+        body = self._evidence_body_for(out_dir, "meta-analysis of 18 sleep studies")
+        assert "across independent cohorts" in body, (
+            "Whole-document fallback broke for a claim with no supporting_passage."
+        )
+
+    def test_passage_scoped_kpm_passes_validate(self, passage_result):
+        _, out_dir = passage_result
+        result = validate(out_dir)
+        assert result.lint_ok, (
+            "doctrine_lint FAILED:\n" + "\n".join(f"  - {v}" for v in result.lint_violations)
+        )
+
+
+# ---------------------------------------------------------------------------
+# n_corroborations honored (REVIEW.md KPM-M7 / EFF-5)
+# ---------------------------------------------------------------------------
+
+
+class TestCorroborationHonored:
+    """The input's n_corroborations is honored — never overwritten with 1."""
+
+    def _single_claim_beat(self, n_corroborations):
+        return {
+            "question": "Does spindle density predict memory consolidation?",
+            "claims": [
+                {
+                    "statement": "Spindle density predicts memory consolidation.",
+                    "source": {
+                        "url": "https://arxiv.org/abs/2001.00099",
+                        "text": "Spindle density predicts memory consolidation across cohorts.",
+                        "venue": "arxiv.org",
+                    },
+                    "ground_verdict": "entails",
+                    "n_corroborations": n_corroborations,
+                    "survived_refuter": True,
+                    "generativity": 3,
+                },
+            ],
+        }
+
+    def _row_bucket(self, tmp_path, n_corroborations):
+        from kpm_builder.schema import ConfidenceBucket  # local: assertion type
+        outcome = build_from_research(
+            CONTRACT_KPM,
+            [self._single_claim_beat(n_corroborations)],
+            out_dir=tmp_path / f"corr_{n_corroborations}",
+            run_date=RUN_DATE,
+            fetched_at=FETCHED_AT,
+        )
+        return outcome.report.rows[0].confidence_bucket, ConfidenceBucket
+
+    def test_two_corroborations_reach_supported(self, tmp_path):
+        bucket, ConfidenceBucket = self._row_bucket(tmp_path, 2)
+        assert bucket == ConfidenceBucket.SUPPORTED, (
+            f"n_corroborations=2 on a PREPRINT entails claim must reach "
+            f"SUPPORTED; got {bucket}."
+        )
+
+    def test_one_corroboration_stays_partial(self, tmp_path):
+        bucket, ConfidenceBucket = self._row_bucket(tmp_path, 1)
+        assert bucket == ConfidenceBucket.PARTIAL, (
+            f"A single-source claim must not reach SUPPORTED; got {bucket}."
+        )
+
+
+# ---------------------------------------------------------------------------
 # JSON round-trip test
 # ---------------------------------------------------------------------------
 

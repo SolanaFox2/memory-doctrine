@@ -12,7 +12,10 @@ For each (source, claim) pair:
   2. Gate A: classify_tier(source).
   3. Gate B: is_relevant(source, contract).  Drop irrelevant sources.
   4. ground(claim, snapshot) → verdict.
-  5. confidence(tier, corroborations=1, ground_verdict, contradiction=False).
+  5. confidence(tier, n_independent_corroborations, ground_verdict,
+     contradiction=False) — the corroboration count is COMPUTED per claim:
+     the number of distinct independent sources (by domain) whose grounding
+     verdict entails the same statement (REVIEW.md KPM-M7 / EFF-5).
 
 Coverage labeling (per core question):
   6. grounded = all kept claims have verdict "entails"
@@ -35,7 +38,8 @@ Verdict-to-state mapping for the coverage row:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, List
+from typing import Callable, Dict, List, Optional, Set
+from urllib.parse import urlsplit
 
 from kpm_builder.confidence import confidence
 from kpm_builder.gate import (
@@ -55,7 +59,7 @@ from kpm_builder.label import (
     question_state,
 )
 from kpm_builder.schema import ConfidenceBucket, ScoredIdea, SourceTier
-from kpm_builder.snapshot import Snapshot, snapshot
+from kpm_builder.snapshot import Snapshot, passage_span, snapshot
 from kpm_builder.strip import strip
 
 # Organizer tail
@@ -65,6 +69,17 @@ from package_research.validate import validate
 
 # Type alias for the injected LLM callable.
 CompleteJSON = Callable[[str, dict], dict]
+
+
+def _independence_key(source: Source) -> str:
+    """Mechanical independence proxy for a source: its domain, lowercased.
+
+    confidence() defines corroboration as distinct authors / institutions —
+    the live path has no author metadata, so distinct domains stand in:
+    two URLs on the same domain never count as independent corroboration.
+    """
+    netloc = urlsplit(source.url).netloc.lower()
+    return netloc or source.url.lower()
 
 
 def _make_fetcher(sources: List[Source]) -> Callable[[str], str]:
@@ -87,6 +102,7 @@ def build_mvp(
     out_dir: Path,
     fetched_at: str,
     run_date: str,
+    supporting_passages: Optional[List[Optional[str]]] = None,
     package_name: str = "@kpm/mvp-build",
     package_description: str = "MVP KPM package built by kpm_builder orchestrator.",
 ) -> BuildOutcome:
@@ -112,6 +128,11 @@ def build_mvp(
         ISO timestamp for snapshots (injected — never clock-calls here).
     run_date:
         ``YYYY-MM-DD`` for the evidence ``verified`` field (injected).
+    supporting_passages:
+        Optional, aligned with ``claims`` — the exact passage from sources[i]
+        that entailed claims[i].  When present, the shipped evidence span is
+        scoped to that passage (REVIEW.md KPM-H5); when ``None`` (or an entry
+        is ``None``), the span falls back to the whole document.
     package_name / package_description:
         Package manifest fields passed to assemble.
 
@@ -125,6 +146,13 @@ def build_mvp(
             f"sources and claims must have the same length; "
             f"got {len(sources)} sources and {len(claims)} claims."
         )
+    if supporting_passages is None:
+        supporting_passages = [None] * len(claims)
+    if len(supporting_passages) != len(claims):
+        raise ValueError(
+            f"supporting_passages and claims must have the same length; "
+            f"got {len(supporting_passages)} passages and {len(claims)} claims."
+        )
 
     fetcher = _make_fetcher(sources)
 
@@ -134,10 +162,11 @@ def build_mvp(
     kept_sources: List[Source] = []
     kept_snapshots: List[Snapshot] = []
     kept_claims: List[str] = []
+    kept_passages: List[Optional[str]] = []
     kept_tiers: List[SourceTier] = []
     kept_verdicts: List[str] = []
 
-    for source, claim in zip(sources, claims):
+    for source, claim, passage in zip(sources, claims, supporting_passages):
         # 1. Snapshot
         snap = snapshot(
             source.url,
@@ -158,17 +187,28 @@ def build_mvp(
         kept_sources.append(source)
         kept_snapshots.append(snap)
         kept_claims.append(claim)
+        kept_passages.append(passage)
         kept_tiers.append(tier)
         kept_verdicts.append(gresult.verdict)
 
     # ------------------------------------------------------------------
-    # 5. Confidence per claim (corroborations=1 for MVP, contradiction=False)
+    # 5. Confidence per claim (REVIEW.md KPM-M7 / EFF-5).
+    #    n_independent_corroborations = number of DISTINCT independent
+    #    sources (by domain — _independence_key) whose grounding verdict
+    #    entails the same statement.  This makes the SUPPORTED tier
+    #    reachable in the live path: a claim entailed by 2+ independent
+    #    domains clears confidence rule 4; a single-source claim cannot.
     # ------------------------------------------------------------------
+    entailing_domains: Dict[str, Set[str]] = {}
+    for source, claim, verdict in zip(kept_sources, kept_claims, kept_verdicts):
+        if verdict == "entails":
+            entailing_domains.setdefault(claim, set()).add(_independence_key(source))
+
     kept_buckets: List[ConfidenceBucket] = []
-    for tier, verdict in zip(kept_tiers, kept_verdicts):
+    for claim, tier, verdict in zip(kept_claims, kept_tiers, kept_verdicts):
         bucket = confidence(
             tier=tier,
-            n_independent_corroborations=1,
+            n_independent_corroborations=len(entailing_domains.get(claim, ())),
             ground_verdict=verdict,
             has_unresolved_contradiction=False,
         )
@@ -224,10 +264,11 @@ def build_mvp(
     #    Shippable = verdict "entails".
     # ------------------------------------------------------------------
     internal_ideas: List[ScoredIdea] = []
-    for source, snap, claim, tier, verdict, bucket in zip(
+    for source, snap, claim, passage, tier, verdict, bucket in zip(
         kept_sources,
         kept_snapshots,
         kept_claims,
+        kept_passages,
         kept_tiers,
         kept_verdicts,
         kept_buckets,
@@ -236,15 +277,9 @@ def build_mvp(
             # over_claims / reject: surface in coverage but DO NOT ship.
             continue
 
-        # Build a SpanRef covering the entire snapshot text (the grounded span).
-        from kpm_builder.snapshot import SpanRef
-
-        span = SpanRef(
-            sha256=snap.sha256,
-            start=0,
-            end=len(snap.text),
-            text=snap.text,
-        )
+        # Evidence span scoped to the passage that entailed the claim —
+        # never the whole document when a passage exists (REVIEW.md KPM-H5).
+        span = passage_span(snap, passage)
 
         idea = ScoredIdea(
             statement=claim,

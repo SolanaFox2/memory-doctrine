@@ -126,6 +126,34 @@ def make_span(snap: Snapshot, start: int, end: int) -> SpanRef:
     )
 
 
+def passage_span(snap: Snapshot, passage: str | None) -> SpanRef:
+    """
+    Build the evidence SpanRef for a claim: its supporting passage, located
+    in the snapshot text — or the whole document only as a fallback.
+
+    Passage-scoping is doctrine-critical (REVIEW.md KPM-H5): shipping the
+    whole document as a claim's span defeats "thin index, rich store" —
+    every claim would cite the same document dump instead of the exact
+    passage that entailed it.
+
+    Resolution order:
+    1. ``passage`` is non-empty and occurs verbatim in ``snap.text`` →
+       SpanRef with real offsets (``snap.text[start:end] == passage``).
+    2. ``passage`` is missing/empty, or has drifted and no longer occurs
+       verbatim → whole-document SpanRef (the legacy fallback; the build
+       stays mechanical instead of failing on one drifted passage).
+    """
+    if passage:
+        start = snap.text.find(passage)
+        if start != -1:
+            return make_span(snap, start, start + len(passage))
+    if not snap.text:
+        # make_span forbids empty ranges; an empty snapshot still gets a
+        # (vacuous) whole-document span so callers need no special case.
+        return SpanRef(sha256=snap.sha256, start=0, end=0, text="")
+    return make_span(snap, 0, len(snap.text))
+
+
 def resolve_span(snap: Snapshot, span: SpanRef) -> str:
     """
     Resolve a SpanRef against a Snapshot, with provenance and drift checks.
