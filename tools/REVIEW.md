@@ -11,7 +11,7 @@ can triage and pick up threads independently.
 
 ## How this was assessed
 
-- Ran both test suites: **package-research 27 passed**; **kpm-builder 267 passed,
+- Ran both test suites: **package-research 99 passed**; **kpm-builder 267 passed,
   1 skipped** — but only after `pip install -e tools/package-research` and adding
   it to `PYTHONPATH` (kpm-builder has no installable packaging; see INF‑1).
 - Built a package with each tool and inspected the output against the doctrine's
@@ -36,8 +36,8 @@ doctrine.
   Confirmed on a fresh build: 0/3 axioms had any edge. It produces a bag of
   disconnected nodes — the exact thing the doctrine calls least valuable.
 - `kpm-builder` does materially better (its `relate`/`resolve`/`apply_relations`
-  subsystem is real): **43 of 150** axioms in its own example carry a typed edge
-  (~29%). Still 0% in the flagship tool.
+  subsystem is real): **103 of 150** axioms in its own example carry a typed edge
+  (~69%). Still 0% in the flagship tool.
 - The lint passes regardless because it only checks that declared edges
   *resolve* (`scripts/doctrine_lint.py:94-99`), never that any edge *exists*.
 
